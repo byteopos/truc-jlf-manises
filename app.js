@@ -293,6 +293,13 @@
     }
     return data;
   }
+  let stats = null, statsError = null;
+  async function loadStats() {
+    statsError = null;
+    const { data, error } = await sb.rpc("visit_stats", { p_days: 30 });
+    if (error) { statsError = "No se pudieron cargar las visitas. Vuelve a entrar y prueba de nuevo."; stats = {}; } else stats = data || {};
+    render();
+  }
   async function loadUsers() {
     usersError = null;
     try { users = (await adminUsers("list")).users; } catch (x) { usersError = x.message; users = []; }
@@ -303,7 +310,7 @@
   const SCORE_OPTS = ["", "3-0", "2-1", "1-2", "0-3"];
   function viewAdmin(C) {
     let h = '<section class="card admin"><h2>' + SUITS.bastos.replace("<svg", '<svg width="28"') + ' Modo organización <button class="btn ghost sm" data-logout style="margin-left:auto">Cerrar sesión</button></h2><div class="who-line">Sesión: <b>' + esc(session.u) + '</b> <span class="chip ' + (isRoot() ? "red" : "ghost") + '">' + ROLE_NAME[session.role] + '</span></div><div class="sub">Zona privada de la organización. Los cambios se ven en la web al pulsar «Publicar cambios».</div><div class="atabs" role="group">';
-    const ATABS = [["resultados", "Resultados"], ["cruces", "Cruces"], ["parejas", "Jugadores"], ["logos", "Escudos"], ["semana", "Semana y aviso"]];
+    const ATABS = [["resultados", "Resultados"], ["cruces", "Cruces"], ["parejas", "Jugadores"], ["logos", "Escudos"], ["semana", "Semana y aviso"], ["visitas", "Visitas"]];
     if (isRoot()) ATABS.push(["fechas", "Fechas y casales"], ["usuarios", "Usuarios"]);
     if (!ATABS.some(([k]) => k === ui.atab)) ui.atab = "resultados";
     ATABS.forEach(([k, l]) => (h += '<button data-atab="' + k + '" aria-pressed="' + (ui.atab === k) + '">' + l + "</button>"));
@@ -341,6 +348,17 @@
         h += '<div class="form-grid">' + users.map((x) => '<div class="pair-edit"><b>' + esc(x.username) + ' <span class="chip ' + (x.role === "root" ? "red" : "ghost") + '">' + ROLE_NAME[x.role] + '</span></b><input type="password" id="pw1-' + esc(x.id) + '" placeholder="Nueva contraseña" autocomplete="new-password" aria-label="Nueva contraseña de ' + esc(x.username) + '"><input type="password" id="pw2-' + esc(x.id) + '" placeholder="Repite la contraseña" autocomplete="new-password" aria-label="Repite la contraseña de ' + esc(x.username) + '"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-setpw="' + esc(x.id) + '">Cambiar contraseña</button>' + (x.id !== session.id ? '<button class="btn ghost sm" data-deluser="' + esc(x.id) + '" data-name="' + esc(x.username) + '">Eliminar</button>' : "") + "</div></div>").join("") + "</div>";
         if (ui.confirmDel) { const x = users.find((y) => y.id === ui.confirmDel); if (x) h += '<div class="notice" style="margin-top:12px"><span>¿Eliminar a <b>' + esc(x.username) + '</b>? No podrá volver a entrar.</span><button class="btn sm" data-deluser-ok="' + esc(x.id) + '">Sí, eliminar</button><button class="btn ghost sm" data-deluser-no>Cancelar</button></div>'; }
         h += '<h3 style="font-size:19px;margin-top:18px">Nuevo usuario</h3><div class="form-grid" style="margin-top:8px"><input type="text" id="nu-name" placeholder="Usuario" autocomplete="off" autocapitalize="none" aria-label="Nuevo usuario"><input type="password" id="nu-pass" placeholder="Contraseña" autocomplete="new-password" aria-label="Contraseña del nuevo usuario"><select id="nu-role" aria-label="Tipo de usuario"><option value="admin">Organización</option><option value="root">Administrador principal</option></select><button class="btn sm" data-adduser>Añadir usuario</button></div><p class="legend">Organización: resultados, cruces, jugadores, escudos y avisos. Administrador principal: además, fechas, casales y usuarios. Los cambios de usuarios se aplican al momento, sin pulsar «Publicar cambios». Mínimo 8 caracteres por contraseña.</p>';
+      }
+    } else if (ui.atab === "visitas") {
+      if (stats === null) { loadStats(); h += '<p class="sub">Cargando visitas…</p>'; }
+      else if (statsError) h += '<p class="login-err">' + esc(statsError) + "</p>";
+      else {
+        const per = (n) => n + (n === 1 ? " persona distinta" : " personas distintas");
+        const tile = (n, l, sub) => '<div class="vtile"><b class="num">' + n + "</b><span>" + l + "</span><small>" + sub + "</small></div>";
+        h += '<div class="vtiles">' + tile(stats.today || 0, "Visitas hoy", per(stats.today_unique || 0)) + tile(stats.week || 0, "Últimos 7 días", per(stats.week_unique || 0)) + tile(stats.total || 0, "En total", per(stats.total_unique || 0)) + "</div>";
+        const d = stats.daily || [], max = Math.max(1, ...d.map((x) => x.visits));
+        h += '<h3 style="font-size:19px;margin-top:18px">Visitas por día · últimos 30 días</h3><div class="vchart" role="img" aria-label="Visitas diarias de los últimos 30 días">' + d.map((x, i) => '<div class="vbar" title="' + esc(fmtDate(x.day)) + ": " + x.visits + (x.visits === 1 ? " visita" : " visitas") + '"><em class="num">' + (x.visits || "") + '</em><i style="height:' + Math.round((x.visits / max) * 100) + '%"></i><span>' + (i % 5 === 4 || i === d.length - 1 ? pd(x.day).getDate() + "/" + (pd(x.day).getMonth() + 1) : "") + "</span></div>").join("") + "</div>";
+        h += '<p class="legend">Se cuenta una visita cada vez que alguien abre la web (una por sesión del navegador, aunque recargue). «Personas distintas» es aproximado: cuenta navegadores y no guarda ningún dato personal. Contando desde el ' + esc(stats.first_day ? fmtDate(stats.first_day) : fmtDate(todayISO())) + '.</p><button class="btn ghost sm" data-reload-stats>Actualizar</button>';
       }
     } else if (ui.atab === "semana") {
       const W = weekly(C);
@@ -409,6 +427,7 @@
     if (t.dataset.unlogo) { falla(t.dataset.unlogo).logo = null; markDirty(); return render(); }
     if (t.hasAttribute("data-discard")) { S = clone(saved); dirty = false; return render(); }
     if (t.hasAttribute("data-save")) return save(t);
+    if (t.hasAttribute("data-reload-stats")) { stats = null; return render(); }
     if (t.dataset.setpw && isRoot()) {
       const id = t.dataset.setpw, p1 = document.getElementById("pw1-" + id).value, p2 = document.getElementById("pw2-" + id).value;
       if (p1.length < 8) return toast("La contraseña necesita al menos 8 caracteres.");
@@ -432,7 +451,7 @@
       adminUsers("create", { username: u, password: p, role }).then(() => { toast("Usuario " + u + " creado."); loadUsers(); }).catch((x) => { toast(x.message); t.disabled = false; });
       return;
     }
-    if (t.hasAttribute("data-logout")) { session = null; users = null; if (sb) sb.auth.signOut(); S = clone(saved); dirty = false; return go("inicio"); }
+    if (t.hasAttribute("data-logout")) { session = null; users = null; stats = null; if (sb) sb.auth.signOut(); S = clone(saved); dirty = false; return go("inicio"); }
   });
   document.addEventListener("toggle", (e) => { const d = e.target; if (d.matches && d.matches("details.round") && d.open) ui.openRound = +d.dataset.round; }, true);
   document.addEventListener("change", async (e) => {
@@ -551,6 +570,14 @@
   (async () => {
     if (!sb) { loadError = !window.supabase ? "No se ha podido cargar la conexión con la base de datos. Recarga la página; si sigue igual, prueba desde otra red o desde el móvil." : "Falta configurar la conexión con Supabase (archivo config.js)."; return render(); }
     try { await loadAll(); } catch (e) { loadError = "No se pudo cargar el campeonato. Revisa tu conexión y recarga la página."; return render(); }
+    try {
+      if (!sessionStorage.getItem("truc-visit")) {
+        let id = localStorage.getItem("truc-vid");
+        if (!id) { id = window.crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("truc-vid", id); }
+        sessionStorage.setItem("truc-visit", "1");
+        sb.rpc("track_visit", { p_visitor: id }).then(() => {}, () => {});
+      }
+    } catch (e) {}
     try { const { data } = await sb.auth.getSession(); if (data && data.session) await loadProfile(data.session.user); } catch (e) {}
     render();
     let timer = null;

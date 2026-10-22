@@ -124,3 +124,43 @@ begin
     end if;
   end loop;
 end $$;
+
+-- Contador de visitas (añadido el 22/10/2026)
+create table if not exists public.visits (
+  id bigint generated always as identity primary key,
+  day date not null default (now() at time zone 'Europe/Madrid')::date,
+  visitor text not null check (char_length(visitor) between 8 and 64),
+  created_at timestamptz not null default now()
+);
+create index if not exists visits_day_idx on public.visits(day);
+alter table public.visits enable row level security;
+create or replace function public.track_visit(p_visitor text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if p_visitor is null or char_length(p_visitor) not between 8 and 64 then return; end if;
+  insert into public.visits(visitor) values (p_visitor);
+end $$;
+create or replace function public.visit_stats(p_days int default 30)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r jsonb; hoy date := (now() at time zone 'Europe/Madrid')::date;
+begin
+  if coalesce(public.my_role(), '') not in ('admin','root') then
+    raise exception 'Solo la organización puede ver las visitas' using errcode = '42501';
+  end if;
+  select jsonb_build_object(
+    'today', (select count(*) from visits where day = hoy),
+    'today_unique', (select count(distinct visitor) from visits where day = hoy),
+    'week', (select count(*) from visits where day > hoy - 7),
+    'week_unique', (select count(distinct visitor) from visits where day > hoy - 7),
+    'total', (select count(*) from visits),
+    'total_unique', (select count(distinct visitor) from visits),
+    'first_day', (select min(day) from visits),
+    'daily', (select coalesce(jsonb_agg(jsonb_build_object('day', d::date, 'visits', coalesce(v.n,0), 'unique', coalesce(v.u,0)) order by d), '[]'::jsonb)
+              from generate_series(hoy - (greatest(p_days,1) - 1), hoy, interval '1 day') d
+              left join (select day, count(*) n, count(distinct visitor) u from visits group by day) v on v.day = d::date)
+  ) into r;
+  return r;
+end $$;
+revoke all on function public.visit_stats(int) from public, anon;
+grant execute on function public.visit_stats(int) to authenticated;
+grant execute on function public.track_visit(text) to anon, authenticated;
