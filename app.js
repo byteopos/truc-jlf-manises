@@ -549,7 +549,7 @@
   if (VIEWS.some(([k]) => k === h0)) ui.view = h0;
   render();
   (async () => {
-    if (!sb) { loadError = "Falta configurar la conexión con Supabase (archivo config.js)."; return render(); }
+    if (!sb) { loadError = !window.supabase ? "No se ha podido cargar la conexión con la base de datos. Recarga la página; si sigue igual, prueba desde otra red o desde el móvil." : "Falta configurar la conexión con Supabase (archivo config.js)."; return render(); }
     try { await loadAll(); } catch (e) { loadError = "No se pudo cargar el campeonato. Revisa tu conexión y recarga la página."; return render(); }
     try { const { data } = await sb.auth.getSession(); if (data && data.session) await loadProfile(data.session.user); } catch (e) {}
     render();
