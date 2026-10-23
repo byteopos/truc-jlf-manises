@@ -164,3 +164,10 @@ end $$;
 revoke all on function public.visit_stats(int) from public, anon;
 grant execute on function public.visit_stats(int) to authenticated;
 grant execute on function public.track_visit(text) to anon, authenticated;
+
+-- Ubicación aproximada de las visitas (añadido el 23/10/2026). La rellena /api/visit en Vercel.
+alter table public.visits add column if not exists city text;
+alter table public.visits add column if not exists region text;
+alter table public.visits add column if not exists country text;
+alter table public.visits add column if not exists device text;
+-- Ver la migración "visitas_ubicacion" en Supabase para track_visit_geo y la versión nueva de visit_stats.

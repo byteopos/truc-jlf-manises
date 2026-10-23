@@ -293,3 +293,16 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 .audit-user { font-weight: 800; overflow-wrap: anywhere; }
 .audit-txt { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .audit-row { grid-template-columns: auto 1fr; } .audit-row .chip { justify-self: start; } .audit-txt { grid-column: 1 / -1; } }
+
+/* Visitas: ubicación y últimas visitas */
+.places { display: grid; gap: 6px; margin-top: 8px; }
+.place { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(60px, 1fr) auto; gap: 10px; align-items: center; font-size: 13.5px; }
+.pname { overflow-wrap: anywhere; font-weight: 700; }
+.pbar { height: 10px; background: var(--card-2); border-radius: 99px; overflow: hidden; }
+.pbar i { display: block; height: 100%; background: var(--espadas); border-radius: 99px; }
+.place b { min-width: 28px; text-align: right; }
+.recent { display: grid; gap: 4px; margin-top: 8px; max-height: 360px; overflow-y: auto; padding-right: 4px; }
+.rrow { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 2px 10px; padding: 7px 10px; background: var(--card-2); border-radius: 10px; font-size: 13px; }
+.rtime { color: var(--ink-soft); grid-row: span 2; align-self: center; }
+.rplace { font-weight: 700; overflow-wrap: anywhere; }
+.rrow small { color: var(--ink-soft); font-size: 12px; }

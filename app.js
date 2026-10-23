@@ -400,6 +400,16 @@
     return data;
   }
   let stats = null, statsError = null;
+  const REGIONS_ES = { VC: "Comunitat Valenciana", MD: "Madrid", CT: "Cataluña", AN: "Andalucía", AR: "Aragón", AS: "Asturias", CB: "Cantabria", CL: "Castilla y León", CM: "Castilla-La Mancha", CN: "Canarias", EX: "Extremadura", GA: "Galicia", IB: "Baleares", MC: "Murcia", NC: "Navarra", PV: "País Vasco", RI: "La Rioja", CE: "Ceuta", ML: "Melilla" };
+  const COUNTRIES = { ES: "España", FR: "Francia", PT: "Portugal", GB: "Reino Unido", DE: "Alemania", IT: "Italia", US: "EE. UU.", AD: "Andorra", NL: "Países Bajos", BE: "Bélgica", CH: "Suiza", IE: "Irlanda" };
+  function placeName(x) {
+    if (!x.city && !x.country) return "Ubicación desconocida";
+    const reg = x.country === "ES" ? REGIONS_ES[x.region] || x.region : null;
+    const parts = [x.city, reg].filter(Boolean);
+    if (x.country && x.country !== "ES") parts.push(COUNTRIES[x.country] || x.country);
+    return parts.join(", ") || COUNTRIES[x.country] || x.country;
+  }
+  const fmtVisit = (iso) => { try { return new Date(iso).toLocaleString("es-ES", { timeZone: "Europe/Madrid", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return iso; } };
   async function loadStats() {
     statsError = null;
     const { data, error } = await sb.rpc("visit_stats", { p_days: 30 });
@@ -466,7 +476,15 @@
         h += '<div class="vtiles">' + tile(stats.today || 0, "Visitas hoy", per(stats.today_unique || 0)) + tile(stats.week || 0, "Últimos 7 días", per(stats.week_unique || 0)) + tile(stats.total || 0, "En total", per(stats.total_unique || 0)) + "</div>";
         const d = stats.daily || [], max = Math.max(1, ...d.map((x) => x.visits));
         h += '<h3 style="font-size:19px;margin-top:18px">Visitas por día · últimos 30 días</h3><div class="vchart" role="img" aria-label="Visitas diarias de los últimos 30 días">' + d.map((x, i) => '<div class="vbar" title="' + esc(fmtDate(x.day)) + ": " + x.visits + (x.visits === 1 ? " visita" : " visitas") + '"><em class="num">' + (x.visits || "") + '</em><i style="height:' + Math.round((x.visits / max) * 100) + '%"></i><span>' + (i % 5 === 4 || i === d.length - 1 ? pd(x.day).getDate() + "/" + (pd(x.day).getMonth() + 1) : "") + "</span></div>").join("") + "</div>";
-        h += '<p class="legend">Se cuenta una visita cada vez que alguien abre la web (una por sesión del navegador, aunque recargue). «Personas distintas» es aproximado: cuenta navegadores y no guarda ningún dato personal. Contando desde el ' + esc(stats.first_day ? fmtDate(stats.first_day) : fmtDate(todayISO())) + '.</p><button class="btn ghost sm" data-reload-stats>Actualizar</button>';
+        const places = stats.places || [], recent = stats.recent || [];
+        const pmax = Math.max(1, ...places.map((x) => x.visits));
+        h += '<div class="grid-2" style="margin-top:22px;gap:18px"><div><h3 style="font-size:19px">¿Desde dónde? · últimos 30 días</h3>';
+        h += places.length ? '<div class="places">' + places.map((x) => '<div class="place"><span class="pname">' + esc(placeName(x)) + '</span><span class="pbar"><i style="width:' + Math.max(4, Math.round((x.visits / pmax) * 100)) + '%"></i></span><b class="num">' + x.visits + "</b></div>").join("") + "</div>" : '<p class="sub">Aún no hay visitas con ubicación. Se empiezan a registrar desde hoy.</p>';
+        if (stats.no_place) h += '<p class="legend" style="margin-top:6px">' + stats.no_place + (stats.no_place === 1 ? " visita" : " visitas") + " sin ubicación (anteriores a este cambio o sin datos).</p>";
+        h += '</div><div><h3 style="font-size:19px">Últimas visitas</h3>';
+        h += recent.length ? '<div class="recent">' + recent.map((x) => '<div class="rrow"><span class="num rtime">' + esc(fmtVisit(x.at)) + '</span><span class="rplace">' + esc(placeName(x)) + '</span><small>' + esc(x.device || "") + "</small></div>").join("") + "</div>" : '<p class="sub">Todavía no hay visitas.</p>';
+        h += "</div></div>";
+        h += '<p class="legend">Se cuenta una visita cada vez que alguien abre la web (una por sesión del navegador, aunque recargue). «Personas distintas» es aproximado: cuenta navegadores. La ubicación es aproximada (ciudad según la conexión a internet; con datos móviles o VPN puede salir otra ciudad cercana) y no se guarda la IP ni ningún dato personal. Contando desde el ' + esc(stats.first_day ? fmtDate(stats.first_day) : fmtDate(todayISO())) + '.</p><button class="btn ghost sm" data-reload-stats>Actualizar</button>';
       }
     } else if (ui.atab === "semana") {
       const W = weekly(C);
@@ -690,7 +708,10 @@
         let id = localStorage.getItem("truc-vid");
         if (!id) { id = window.crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("truc-vid", id); }
         sessionStorage.setItem("truc-visit", "1");
-        sb.rpc("track_visit", { p_visitor: id }).then(() => {}, () => {});
+        const vid = id;
+        fetch("/api/visit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitor: vid, device: deviceInfo() }), keepalive: true })
+          .then((r) => { if (!r.ok) throw new Error("api"); })
+          .catch(() => sb.rpc("track_visit", { p_visitor: vid }).then(() => {}, () => {}));
       }
     } catch (e) {}
     try { const { data } = await sb.auth.getSession(); if (data && data.session) await loadProfile(data.session.user); } catch (e) {}
