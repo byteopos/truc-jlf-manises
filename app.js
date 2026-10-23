@@ -154,10 +154,26 @@
     return '<section class="card podio-card" aria-labelledby="podio-h"><div class="corner">' + SUITS.oros + '</div><div class="card-head"><div><div class="eyebrow" style="color:var(--copas)">Clasificación general</div><h2 id="podio-h">El podio</h2><div class="sub">Tras ' + C.playedRounds + " de " + S.rounds.length + ' jornadas</div></div></div><div class="podio">' + order.map((i) => col(top[i], i)).join("") + '</div>' + (withLink ? '<p class="podio-foot"><button class="link" data-go="clasificacion">Ver la clasificación completa</button></p>' : "") + "</section>";
   }
 
+  // Aviso destacado: automático (próxima jornada y su falla) salvo que la organización escriba uno propio.
+  function autoNotice(C) {
+    const r = C.next;
+    if (!r) return "";
+    const f = falla(r.host), d = daysUntil(r.date);
+    const donde = "en la " + (f ? f.name : r.host);
+    if (d === 0) return "Esta noche, jornada " + r.n + " " + donde + ". ¡Que no falte nadie!";
+    if (d === 1) return "Mañana, jornada " + r.n + " " + donde + ". ¡Que no falte nadie!";
+    return "Próxima jornada: " + fmtDate(r.date, true) + " " + donde + ". ¡Que no falte nadie!";
+  }
+  function noticeText(C) {
+    if (S.weekly && S.weekly.autoNotice !== false) return autoNotice(C);
+    return (S.notice || "").trim();
+  }
+
   function viewInicio(C) {
     const W = weekly(C);
     let h = "";
-    if (S.notice && S.notice.trim()) h += '<div class="notice" role="status"><span class="shout">¡Truc!</span><span>' + esc(S.notice) + "</span></div>";
+    const nt = noticeText(C);
+    if (nt) h += '<div class="notice" role="status"><span class="shout">¡Truc!</span><span>' + esc(nt) + "</span></div>";
     const r = C.next;
     if (r) {
       const hf = falla(r.host);
@@ -365,7 +381,7 @@
       const tw = weekStart(C.today);
       const cands = [];
       S.rounds.filter((r) => r.confirmed && !r.provisional && r.date >= C.today).slice(0, 2).forEach((r) => r.matches.forEach((m, i) => cands.push({ r, m, i })));
-      h += '<div class="form-grid"><label class="field">Partida de la semana<select id="a-pw"><option value="">Automática (cruce entre las mejores clasificadas)</option>' + cands.map((c) => '<option value="' + c.r.n + ":" + c.i + '"' + (S.weekly.match && S.weekly.match.r === c.r.n && S.weekly.match.i === c.i ? " selected" : "") + ">J" + c.r.n + " · " + esc(pairLabel(c.m.a)) + " vs " + esc(pairLabel(c.m.b)) + "</option>").join("") + '</select></label><label class="field">Mejor pareja de la semana<select id="a-bp"><option value="">Automática (más camas ganadas)</option>' + allPairs().map((p) => '<option value="' + p + '"' + (S.weekly.bestPair === p ? " selected" : "") + ">" + esc(pairLabel(p)) + "</option>").join("") + '</select></label></div><label class="field" style="margin-top:12px">Aviso destacado (deja vacío para ocultarlo)<textarea id="a-notice">' + esc(S.notice || "") + "</textarea></label>";
+      h += '<div class="form-grid"><label class="field">Partida de la semana<select id="a-pw"><option value="">Automática (cruce entre las mejores clasificadas)</option>' + cands.map((c) => '<option value="' + c.r.n + ":" + c.i + '"' + (S.weekly.match && S.weekly.match.r === c.r.n && S.weekly.match.i === c.i ? " selected" : "") + ">J" + c.r.n + " · " + esc(pairLabel(c.m.a)) + " vs " + esc(pairLabel(c.m.b)) + "</option>").join("") + '</select></label><label class="field">Mejor pareja de la semana<select id="a-bp"><option value="">Automática (más camas ganadas)</option>' + allPairs().map((p) => '<option value="' + p + '"' + (S.weekly.bestPair === p ? " selected" : "") + ">" + esc(pairLabel(p)) + "</option>").join("") + '</select></label></div>' + '<label class="field" style="margin-top:14px;display:flex;flex-direction:row;gap:8px;align-items:center"><input type="checkbox" id="a-autonotice"' + (S.weekly.autoNotice !== false ? " checked" : "") + '> Aviso automático con la próxima jornada y su falla</label>' + (S.weekly.autoNotice !== false ? '<p class="legend" style="margin-top:6px">Ahora dice: «' + esc(autoNotice(C)) + '». Cambia solo cada jornada.</p>' : '<label class="field" style="margin-top:8px">Aviso propio (deja vacío para ocultarlo)<textarea id="a-notice">' + esc(S.notice || "") + "</textarea></label>");
       h += '<p class="legend">Ahora mismo se muestra: ' + (W.match ? esc(pairLabel(W.match.m.a) + " vs " + pairLabel(W.match.m.b)) : "—") + " como partida de la semana y " + (W.best ? esc(pairLabel(W.best.p)) : "—") + " como mejor pareja.</p>";
     }
     h += '<div class="savebar"><span class="msg" id="save-msg">' + (dirty ? "Tienes cambios sin publicar." : "Todo publicado.") + '</span>' + (dirty ? '<button class="btn ghost" data-discard>Descartar</button>' : "") + '<button class="btn gold" data-save' + (dirty ? "" : " disabled") + ">Publicar cambios</button></div></section>";
@@ -465,6 +481,7 @@
     if (t.dataset.rhost && isRoot()) { S.rounds.find((r) => r.n === +t.dataset.rhost).host = t.value; markDirty(); return; }
     if (t.id === "a-prov") { R.provisional = t.checked; markDirty(); return; }
     if (t.id === "a-pw") { S.weekly.match = t.value ? { r: +t.value.split(":")[0], i: +t.value.split(":")[1] } : null; markDirty(); return render(); }
+    if (t.id === "a-autonotice") { S.weekly = Object.assign({}, S.weekly, { autoNotice: t.checked }); markDirty(); return render(); }
     if (t.id === "a-bp") { S.weekly.bestPair = t.value || null; markDirty(); return render(); }
     if (t.hasAttribute("data-logos-bulk") && t.files && t.files.length) {
       let ok = 0; const miss = [];
