@@ -294,12 +294,102 @@
     btn.disabled = false; btn.textContent = "Entrar";
     if (error || !session) {
       if (!error) await sb.auth.signOut();
+      sb.rpc("audit_failed_login", { p_username: u, p_info: deviceInfo() }).then(() => {}, () => {});
       err.textContent = error && error.status === 429 ? "Demasiados intentos. Espera unos minutos y vuelve a probar." : "Usuario o contraseña incorrectos.";
       err.hidden = false; document.getElementById("lg-pass").value = ""; return;
     }
+    sb.rpc("audit_event", { p_action: "login", p_info: deviceInfo() }).then(() => {}, () => {});
     toast("Sesión iniciada como " + session.u + ".");
     render();
   });
+  function deviceInfo() {
+    const ua = navigator.userAgent || "";
+    const nav = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Navegador";
+    const so = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iPhone/iPad" : /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "otro sistema";
+    return nav + " en " + so + (/Mobi/.test(ua) ? " (móvil)" : "");
+  }
+
+  // ---------- auditoría (solo root) ----------
+  let audit = null, auditError = null;
+  async function loadAudit() {
+    auditError = null;
+    const { data, error } = await sb.rpc("audit_entries", { p_limit: 300, p_username: ui.auditUser || null });
+    if (error) { auditError = "No se pudo cargar la auditoría."; audit = []; } else audit = data || [];
+    render();
+  }
+  const fmtStamp = (iso) => { try { return new Date(iso).toLocaleString("es-ES", { timeZone: "Europe/Madrid", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return iso; } };
+  const sc = (a, b) => (a == null || b == null ? "sin resultado" : a + "-" + b);
+  const yn = (v) => (v ? "sí" : "no");
+  function auditText(e) {
+    const d = e.detail || {}, ch = d.cambios || {}, f = d.fila || {}, has = (k) => Object.prototype.hasOwnProperty.call(ch, k);
+    const pl = (id) => { try { return pairLabel(id); } catch (x) { return id; } };
+    const fname = (id) => { const x = falla(id); return x ? x.name : id; };
+    switch (e.action) {
+      case "login": return ["Entrada", "Inició sesión" + (d.dispositivo ? " · " + d.dispositivo : "")];
+      case "logout": return ["Salida", "Cerró sesión"];
+      case "login_fallido": return ["Fallo", "Intento de entrada fallido con el usuario «" + e.username + "»" + (d.dispositivo ? " · " + d.dispositivo : "")];
+      case "usuario_creado": return ["Usuarios", "Creó el usuario «" + (d.usuario || "") + "» (" + (d.rol === "root" ? "administrador principal" : "organización") + ")"];
+      case "contrasena_cambiada": return ["Usuarios", "Cambió la contraseña de «" + (d.usuario || "") + "»"];
+      case "usuario_eliminado": return ["Usuarios", "Eliminó el usuario «" + (d.usuario || "") + "»"];
+    }
+    const out = [];
+    if (e.entity === "matches") {
+      const cruce = "J" + f.round_n + " · " + pl(f.a) + " – " + pl(f.b);
+      if (e.action === "insert") return ["Cruces", "Añadió el cruce " + cruce];
+      if (e.action === "delete") return ["Cruces", "Quitó el cruce " + cruce];
+      if (has("sa") || has("sb")) out.push("Resultado " + cruce + ": " + sc(has("sa") ? ch.sa.antes : f.sa, has("sb") ? ch.sb.antes : f.sb) + " → " + sc(f.sa, f.sb));
+      if (has("a") || has("b")) out.push("Cambió el cruce J" + f.round_n + ": " + pl(has("a") ? ch.a.antes : f.a) + " – " + pl(has("b") ? ch.b.antes : f.b) + " → " + pl(f.a) + " – " + pl(f.b));
+      return [has("sa") || has("sb") ? "Resultados" : "Cruces", out.join(". ")];
+    }
+    if (e.entity === "pairs") {
+      ["player1", "player2", "nick"].forEach((k, i) => { if (has(k)) out.push((k === "nick" ? "Mote" : "Jugador/a " + (i + 1)) + " de " + pl(f.id) + ": «" + (ch[k].antes || "—") + "» → «" + (ch[k].despues || "—") + "»"); });
+      return ["Jugadores", out.join(". ") || "Cambió " + pl(f.id)];
+    }
+    if (e.entity === "fallas") {
+      if (has("logo")) out.push((f.logo ? "Cambió el escudo de " : "Quitó el escudo de ") + (f.name || f.id));
+      if (has("name") || has("short")) out.push("Nombre: «" + ((ch.name && ch.name.antes) || (ch.short && ch.short.antes)) + "» → «" + (f.name || f.short) + "»");
+      if (has("color")) out.push("Color de " + (f.name || f.id));
+      return ["Escudos", out.join(". ") || (e.action === "insert" ? "Añadió la falla " + f.name : e.action === "delete" ? "Quitó la falla " + f.name : "Cambió " + f.name)];
+    }
+    if (e.entity === "rounds") {
+      if (has("date")) out.push("Jornada " + f.n + ": fecha " + fmtDate(ch.date.antes) + " → " + fmtDate(f.date));
+      if (has("host")) out.push("Jornada " + f.n + ": casal " + fname(ch.host.antes) + " → " + fname(f.host));
+      if (has("confirmed")) out.push("Jornada " + f.n + ": cruces visibles " + yn(f.confirmed));
+      if (has("provisional")) out.push("Jornada " + f.n + ": " + (f.provisional ? "marcada como posibles cruces" : "cruces confirmados"));
+      return [has("date") || has("host") ? "Fechas" : "Cruces", out.join(". ") || "Cambió la jornada " + f.n];
+    }
+    if (e.entity === "settings") {
+      if (has("notice")) out.push("Aviso propio: «" + (f.notice || "—") + "»");
+      if (has("jlf_logo")) out.push("Cambió el logo de la JLF");
+      if (has("weekly")) {
+        const a = ch.weekly.antes || {}, b = ch.weekly.despues || {};
+        if (JSON.stringify(a.match) !== JSON.stringify(b.match)) out.push(b.match ? "Eligió la partida de la semana (J" + b.match.r + ")" : "Partida de la semana en automático");
+        if (a.bestPair !== b.bestPair) out.push(b.bestPair ? "Eligió como mejor pareja a " + pl(b.bestPair) : "Mejor pareja en automático");
+        if (a.autoNotice !== b.autoNotice) out.push("Aviso automático: " + yn(b.autoNotice !== false));
+      }
+      if (has("season")) out.push("Temporada: " + f.season);
+      return ["Ajustes", out.join(". ") || "Cambió los ajustes"];
+    }
+    return ["Cambio", e.entity + " " + (e.entity_id || "")];
+  }
+  function viewAudit() {
+    if (audit === null) { loadAudit(); return '<p class="sub">Cargando auditoría…</p>'; }
+    let h = "";
+    if (auditError) h += '<p class="login-err">' + esc(auditError) + "</p>";
+    const names = Array.from(new Set(["root", "admin_jlf"].concat((users || []).map((x) => x.username), audit.map((x) => x.username)))).filter(Boolean);
+    h += '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><label class="field" style="min-width:200px">Usuario<select id="a-audit-user"><option value="">Todos</option>' + names.map((n) => '<option value="' + esc(n) + '"' + (ui.auditUser === n ? " selected" : "") + ">" + esc(n) + "</option>").join("") + '</select></label><button class="btn ghost sm" data-reload-audit>Actualizar</button></div>';
+    if (!audit.length) return h + '<p class="sub" style="margin-top:12px">Todavía no hay movimientos registrados.</p>';
+    let lastDay = "";
+    h += '<div class="audit">';
+    audit.forEach((e) => {
+      const day = new Date(e.at).toLocaleDateString("es-ES", { timeZone: "Europe/Madrid", weekday: "long", day: "numeric", month: "long" });
+      if (day !== lastDay) { h += '<div class="audit-day">' + esc(day) + "</div>"; lastDay = day; }
+      const [tag, txt] = auditText(e);
+      const time = new Date(e.at).toLocaleTimeString("es-ES", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      h += '<div class="audit-row' + (e.action === "login_fallido" ? " bad" : "") + '"><span class="audit-time num">' + time + '</span><span class="audit-user">' + esc(e.username) + '</span><span class="chip ' + (tag === "Fallo" ? "red" : tag === "Entrada" || tag === "Salida" ? "blue" : tag === "Usuarios" ? "gold" : "ghost") + '">' + esc(tag) + '</span><span class="audit-txt">' + esc(txt) + "</span></div>";
+    });
+    return h + '</div><p class="legend">Se guardan las entradas y salidas, los intentos fallidos y cada cambio publicado (quién, cuándo y qué). Lo registra la base de datos, no la página, y solo lo ve el administrador principal. Se muestran los 300 movimientos más recientes.</p>';
+  }
   async function adminUsers(action, payload) {
     const { data, error } = await sb.functions.invoke("admin-users", { body: Object.assign({ action }, payload || {}) });
     if (error) {
@@ -327,7 +417,7 @@
   function viewAdmin(C) {
     let h = '<section class="card admin"><h2>' + SUITS.bastos.replace("<svg", '<svg width="28"') + ' Modo organización <button class="btn ghost sm" data-logout style="margin-left:auto">Cerrar sesión</button></h2><div class="who-line">Sesión: <b>' + esc(session.u) + '</b> <span class="chip ' + (isRoot() ? "red" : "ghost") + '">' + ROLE_NAME[session.role] + '</span></div><div class="sub">Zona privada de la organización. Los cambios se ven en la web al pulsar «Publicar cambios».</div><div class="atabs" role="group">';
     const ATABS = [["resultados", "Resultados"], ["cruces", "Cruces"], ["parejas", "Jugadores"], ["logos", "Escudos"], ["semana", "Semana y aviso"], ["visitas", "Visitas"]];
-    if (isRoot()) ATABS.push(["fechas", "Fechas y casales"], ["usuarios", "Usuarios"]);
+    if (isRoot()) ATABS.push(["fechas", "Fechas y casales"], ["usuarios", "Usuarios"], ["auditoria", "Auditoría"]);
     if (!ATABS.some(([k]) => k === ui.atab)) ui.atab = "resultados";
     ATABS.forEach(([k, l]) => (h += '<button data-atab="' + k + '" aria-pressed="' + (ui.atab === k) + '">' + l + "</button>"));
     h += "</div>";
@@ -357,6 +447,8 @@
       h += '</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px"><label class="btn sm">Subir varios a la vez<input type="file" accept="image/*" multiple data-logos-bulk hidden></label><span class="legend" style="margin:0">Si el archivo se llama como la falla (manises.jpg, carmen.jpg, jlf.jpg…), cada escudo va a su sitio solo.</span></div><p class="legend">Mejor en PNG o JPG cuadrado, con fondo blanco. Se muestran en círculo.</p>';
     } else if (ui.atab === "fechas" && isRoot()) {
       h += '<p class="sub">Cambia el día o el casal de cada jornada.</p>' + S.rounds.map((r) => '<div class="arow" style="grid-template-columns:52px 1fr 1fr"><span class="nm">J' + r.n + '</span><input type="date" id="rd-' + r.n + '" data-rdate="' + r.n + '" value="' + esc(r.date) + '" aria-label="Fecha jornada ' + r.n + '"><select id="rh-' + r.n + '" data-rhost="' + r.n + '" aria-label="Casal jornada ' + r.n + '">' + S.fallas.map((f) => '<option value="' + f.id + '"' + (f.id === r.host ? " selected" : "") + ">" + esc(f.name) + "</option>").join("") + "</select></div>").join("");
+    } else if (ui.atab === "auditoria" && isRoot()) {
+      h += viewAudit();
     } else if (ui.atab === "usuarios" && isRoot()) {
       if (users === null) { loadUsers(); h += '<p class="sub">Cargando usuarios…</p>'; }
       else {
@@ -467,7 +559,12 @@
       adminUsers("create", { username: u, password: p, role }).then(() => { toast("Usuario " + u + " creado."); loadUsers(); }).catch((x) => { toast(x.message); t.disabled = false; });
       return;
     }
-    if (t.hasAttribute("data-logout")) { session = null; users = null; stats = null; if (sb) sb.auth.signOut(); S = clone(saved); dirty = false; return go("inicio"); }
+    if (t.hasAttribute("data-logout")) {
+      session = null; users = null; stats = null; audit = null;
+      if (sb) sb.rpc("audit_event", { p_action: "logout" }).then(() => sb.auth.signOut(), () => sb.auth.signOut());
+      S = clone(saved); dirty = false; return go("inicio");
+    }
+    if (t.hasAttribute("data-reload-audit")) { audit = null; return render(); }
   });
   document.addEventListener("toggle", (e) => { const d = e.target; if (d.matches && d.matches("details.round") && d.open) ui.openRound = +d.dataset.round; }, true);
   document.addEventListener("change", async (e) => {
@@ -481,6 +578,7 @@
     if (t.dataset.rhost && isRoot()) { S.rounds.find((r) => r.n === +t.dataset.rhost).host = t.value; markDirty(); return; }
     if (t.id === "a-prov") { R.provisional = t.checked; markDirty(); return; }
     if (t.id === "a-pw") { S.weekly.match = t.value ? { r: +t.value.split(":")[0], i: +t.value.split(":")[1] } : null; markDirty(); return render(); }
+    if (t.id === "a-audit-user") { ui.auditUser = t.value || null; audit = null; return render(); }
     if (t.id === "a-autonotice") { S.weekly = Object.assign({}, S.weekly, { autoNotice: t.checked }); markDirty(); return render(); }
     if (t.id === "a-bp") { S.weekly.bestPair = t.value || null; markDirty(); return render(); }
     if (t.hasAttribute("data-logos-bulk") && t.files && t.files.length) {

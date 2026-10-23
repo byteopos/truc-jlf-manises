@@ -25,10 +25,13 @@ Deno.serve(async (req) => {
   if (!user) return json({ error: "Tu sesión ha caducado. Vuelve a entrar." }, 401);
 
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { data: me } = await admin.from("profiles").select("role").eq("user_id", user.id).maybeSingle();
+  const { data: me } = await admin.from("profiles").select("role, username").eq("user_id", user.id).maybeSingle();
   if (me?.role !== "root") return json({ error: "Solo el administrador principal puede gestionar usuarios." }, 403);
 
   const body = await req.json().catch(() => ({}));
+  const audit = (action: string, detail: Record<string, unknown>) =>
+    admin.from("audit_log").insert({ user_id: user.id, username: me.username, action, entity: "usuarios", detail });
+  const nameOf = async (id: string) => (await admin.from("profiles").select("username").eq("user_id", id).maybeSingle()).data?.username ?? id;
   const validName = (u: unknown) => typeof u === "string" && /^[a-z0-9_.-]{3,30}$/.test(u);
   const validPass = (p: unknown) => typeof p === "string" && p.length >= 8 && p.length <= 72;
   const validRole = (r: unknown) => r === "admin" || r === "root";
@@ -51,6 +54,7 @@ Deno.serve(async (req) => {
       if (error || !created.user) return json({ error: "No se pudo crear el usuario." }, 400);
       const { error: pErr } = await admin.from("profiles").insert({ user_id: created.user.id, username: body.username, role: body.role });
       if (pErr) { await admin.auth.admin.deleteUser(created.user.id); return json({ error: "No se pudo crear el usuario." }, 500); }
+      await audit("usuario_creado", { usuario: body.username, rol: body.role });
       return json({ ok: true });
     }
     case "set_password": {
@@ -58,6 +62,7 @@ Deno.serve(async (req) => {
       if (!validPass(body.password)) return json({ error: "La contraseña debe tener entre 8 y 72 caracteres." }, 400);
       const { error } = await admin.auth.admin.updateUserById(body.user_id, { password: body.password });
       if (error) return json({ error: "No se pudo cambiar la contraseña." }, 400);
+      await audit("contrasena_cambiada", { usuario: await nameOf(body.user_id) });
       return json({ ok: true });
     }
     case "delete": {
@@ -68,8 +73,10 @@ Deno.serve(async (req) => {
         const { count } = await admin.from("profiles").select("user_id", { count: "exact", head: true }).eq("role", "root");
         if ((count ?? 0) <= 1) return json({ error: "Tiene que quedar al menos un administrador principal." }, 400);
       }
+      const goneName = await nameOf(body.user_id);
       const { error } = await admin.auth.admin.deleteUser(body.user_id);
       if (error) return json({ error: "No se pudo eliminar el usuario." }, 400);
+      await audit("usuario_eliminado", { usuario: goneName });
       return json({ ok: true });
     }
     default:

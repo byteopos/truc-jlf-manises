@@ -283,3 +283,13 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 .vbar span { position: absolute; bottom: -18px; font-size: 10px; color: var(--ink-soft); white-space: nowrap; }
 .vchart + .legend { margin-top: 26px; }
 @media (max-width: 560px) { .vbar em { display: none; } .vchart { gap: 2px; } }
+
+/* Auditoría (solo root) */
+.audit { display: grid; gap: 4px; margin-top: 14px; }
+.audit-day { margin-top: 10px; font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); }
+.audit-row { display: grid; grid-template-columns: 74px 96px auto 1fr; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--card-2); font-size: 13.5px; }
+.audit-row.bad { background: #fde3e0; }
+.audit-time { color: var(--ink-soft); }
+.audit-user { font-weight: 800; overflow-wrap: anywhere; }
+.audit-txt { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .audit-row { grid-template-columns: auto 1fr; } .audit-row .chip { justify-self: start; } .audit-txt { grid-column: 1 / -1; } }
