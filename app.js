@@ -435,11 +435,21 @@
     if (ui.adminRound == null) ui.adminRound = (C.next || S.rounds[0]).n;
     const R = S.rounds.find((r) => r.n === ui.adminRound);
     if (ui.atab === "resultados") {
-      h += '<div style="max-width:360px">' + roundSel("a-round") + "</div>";
+      h += '<div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap"><div style="flex:1 1 260px;max-width:360px">' + roundSel("a-round") + "</div>" + (R.matches.length ? '<label class="btn gold photo-btn' + (ui.photoBusy ? " busy" : "") + '">' + (ui.photoBusy ? "Leyendo la hoja…" : "Leer resultados desde una foto") + '<input type="file" accept="image/*" capture="environment" data-photo hidden' + (ui.photoBusy ? " disabled" : "") + "></label>" : "") + "</div>";
+      const ph = ui.photo && ui.photo.round === R.n ? ui.photo : null;
+      if (ph) {
+        const nOk = ph.marks.filter((x) => x === "ok").length, nUn = ph.marks.filter((x) => x === "unsure").length, nMiss = ph.marks.filter((x) => x === "missing").length;
+        h += '<div class="photo-box"><div class="photo-sum"><b>He leído la hoja: ' + (nOk + nUn) + " de " + R.matches.length + " resultados rellenados.</b> " + (nUn ? nUn + " con dudas (en amarillo). " : "") + (nMiss ? nMiss + " sin leer (en rojo), ponlos a mano. " : "") + "Revísalos con la foto y pulsa «Publicar cambios». Nada se publica hasta entonces.</div>";
+        if (ph.warnings.length) h += '<ul class="photo-warn">' + ph.warnings.map((w) => "<li>" + esc(w) + "</li>").join("") + "</ul>";
+        h += '<details class="photo-prev"><summary>Ver la foto</summary><img src="' + esc(ph.url) + '" alt="Foto de la hoja de resultados"></details></div>';
+      } else if (R.matches.length) {
+        h += '<p class="legend" style="margin-top:8px">Haz una foto a la hoja de la jornada (recta, con buena luz y que se vean las dos columnas de números). Los resultados se rellenan solos para que solo tengas que revisarlos.</p>';
+      }
       if (!R.matches.length) h += '<p class="sub">Esta jornada no tiene cruces todavía. Añádelos en la pestaña «Cruces».</p>';
       R.matches.forEach((m, i) => {
         const v = played(m) ? m.sa + "-" + m.sb : "";
-        h += '<div class="arow"><span class="nm">' + esc(pairLabel(m.a)) + '</span><select id="sc-' + R.n + "-" + i + '" data-score="' + i + '" aria-label="Resultado ' + esc(pairLabel(m.a)) + " contra " + esc(pairLabel(m.b)) + '">' + SCORE_OPTS.map((o) => '<option value="' + o + '"' + (o === v ? " selected" : "") + ">" + (o || "—") + "</option>").join("") + '</select><span class="nm r">' + esc(pairLabel(m.b)) + "</span></div>";
+        const mk = ph ? ph.marks[i] : null;
+        h += '<div class="arow' + (mk ? " ph-" + mk : "") + '"><span class="nm">' + esc(pairLabel(m.a)) + '</span><select id="sc-' + R.n + "-" + i + '" data-score="' + i + '" aria-label="Resultado ' + esc(pairLabel(m.a)) + " contra " + esc(pairLabel(m.b)) + '">' + SCORE_OPTS.map((o) => '<option value="' + o + '"' + (o === v ? " selected" : "") + ">" + (o || "—") + "</option>").join("") + '</select><span class="nm r">' + esc(pairLabel(m.b)) + "</span></div>";
       });
     } else if (ui.atab === "cruces") {
       h += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">' + '<div style="flex:1 1 260px;max-width:360px">' + roundSel("a-round") + '</div><label class="field" style="flex-direction:row;display:flex;gap:8px;align-items:center"><input type="checkbox" id="a-confirmed"' + (R.confirmed ? " checked" : "") + "> Cruces visibles al público</label><label class=\"field\" style=\"flex-direction:row;display:flex;gap:8px;align-items:center\"><input type=\"checkbox\" id=\"a-prov\"" + (R.provisional ? " checked" : "") + "> Marcar como posibles cruces (sin confirmar)</label></div>";
@@ -616,6 +626,7 @@
       toast(ok + " escudos listos" + (miss.length ? "; no reconocidos: " + miss.join(", ") : "") + ". Pulsa «Publicar cambios».");
       return;
     }
+    if (t.hasAttribute("data-photo") && t.files && t.files[0]) { readSheetPhoto(t.files[0]); return; }
     if (t.dataset.logo && t.files && t.files[0]) {
       try {
         const url = await imageToDataUrl(t.files[0], t.dataset.logo === "__jlf" ? 260 : 220);
@@ -631,6 +642,38 @@
     else if (t.id === "a-notice") { S.notice = t.value; markDirty(); }
   });
 
+  async function readSheetPhoto(file) {
+    const R = S.rounds.find((r) => r.n === ui.adminRound);
+    if (!R || !R.matches.length) return;
+    ui.photoBusy = true; render();
+    try {
+      const image = await imageToDataUrl(file, 1800);
+      const { data } = await sb.auth.getSession();
+      const token = data && data.session && data.session.access_token;
+      const f = falla(R.host);
+      const resp = await fetch("/api/read-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + (token || "") },
+        body: JSON.stringify({ image, round: R.n, date: fmtDate(R.date, true), host: f ? f.name : "", matches: R.matches.map((m, i) => ({ n: i + 1, a: pairLabel(m.a), b: pairLabel(m.b) })) }),
+      });
+      const out = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(out.error || "No se pudo leer la foto.");
+      const marks = R.matches.map(() => "missing");
+      (out.resultados || []).forEach((x) => {
+        const i = x.n - 1, m = R.matches[i];
+        if (!m || x.sa == null || x.sb == null) return;
+        m.sa = x.sa; m.sb = x.sb; marks[i] = x.seguro ? "ok" : "unsure";
+      });
+      const warnings = (out.avisos || []).slice();
+      if (out.jornada_en_foto && out.jornada_en_foto !== R.n) warnings.unshift("Ojo: la foto parece de la jornada " + out.jornada_en_foto + " y estás en la jornada " + R.n + ".");
+      ui.photo = { round: R.n, marks, warnings, url: URL.createObjectURL(file) };
+      if (marks.some((x) => x !== "missing")) markDirty();
+      toast("Hoja leída. Revisa los resultados y publica.");
+    } catch (err) {
+      toast(err.message || "No se pudo leer la foto.");
+    }
+    ui.photoBusy = false; render();
+  }
   function imageToDataUrl(file, size) {
     return new Promise((resolve, reject) => {
       const img = new Image(), url = URL.createObjectURL(file);

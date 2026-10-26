@@ -306,3 +306,14 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 .rtime { color: var(--ink-soft); grid-row: span 2; align-self: center; }
 .rplace { font-weight: 700; overflow-wrap: anywhere; }
 .rrow small { color: var(--ink-soft); font-size: 12px; }
+
+/* Lectura de la hoja desde foto */
+.photo-btn { cursor: pointer; }
+.photo-btn.busy { opacity: .7; cursor: progress; }
+.photo-box { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: #fff7df; border: 1.5px solid var(--oros); display: grid; gap: 8px; font-size: 13.5px; }
+.photo-warn { margin: 0; padding-left: 18px; color: var(--ink); }
+.photo-prev summary { cursor: pointer; font-weight: 700; color: var(--espadas); }
+.photo-prev img { margin-top: 8px; border-radius: 10px; max-height: 70vh; width: auto; }
+.arow.ph-ok { box-shadow: inset 4px 0 0 var(--win); padding-left: 10px; }
+.arow.ph-unsure { background: #fff1c9; box-shadow: inset 4px 0 0 var(--oros); padding-left: 10px; }
+.arow.ph-missing { background: #fde3e0; box-shadow: inset 4px 0 0 var(--loss); padding-left: 10px; }
