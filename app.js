@@ -236,7 +236,32 @@
     const i = photos.findIndex((x) => x.id === id);
     if (i < 0) return;
     ui.lightbox = i; drawLightbox();
+    trackPhotoView(photos[i]);
   }
+  function visitorId() {
+    try {
+      let id = localStorage.getItem("truc-vid");
+      if (!id) { id = window.crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("truc-vid", id); }
+      return id;
+    } catch (e) { return null; }
+  }
+  function trackPhotoView(x) {
+    if (!x || !sb || session) return; // las vistas de la organización no cuentan
+    try {
+      const key = "truc-pv-" + x.id;
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+      const vid = visitorId();
+      if (vid) sb.rpc("track_photo_view", { p_photo: x.id, p_visitor: vid }).then(() => {}, () => {});
+    } catch (e) {}
+  }
+  let photoStats = null;
+  async function loadPhotoStats() {
+    const { data, error } = await sb.rpc("photo_stats");
+    photoStats = error ? {} : data || {};
+    render();
+  }
+  const pvText = (id) => { const v = photoStats && photoStats[id]; if (!v) return "0 vistas"; return v.views + (v.views === 1 ? " vista" : " vistas") + " · " + v.unique + (v.unique === 1 ? " persona" : " personas"); };
   function drawLightbox() {
     let lb = document.getElementById("lightbox");
     if (ui.lightbox == null) { if (lb) lb.remove(); document.body.style.overflow = ""; return; }
@@ -252,6 +277,7 @@
     const same = photos.filter((y) => y.round_n === x.round_n), k = same.indexOf(x);
     const nx = same[(k + d + same.length) % same.length];
     ui.lightbox = photos.indexOf(nx); drawLightbox();
+    trackPhotoView(nx);
   }
   document.addEventListener("click", (e) => {
     const o = e.target.closest("[data-photo-open]");
@@ -537,10 +563,11 @@
       }
     } else if (ui.atab === "fotos") {
       const list = photos.filter((x) => x.round_n === R.n);
+      if (photoStats === null) loadPhotoStats();
       h += '<div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap"><div style="flex:1 1 260px;max-width:360px">' + roundSel("a-round") + '</div><label class="btn gold' + (ui.upBusy ? " busy" : "") + '">' + (ui.upBusy ? esc(ui.upBusy) : "Subir fotos de esta jornada") + '<input type="file" accept="image/*" multiple data-gal-upload hidden' + (ui.upBusy ? " disabled" : "") + "></label></div>";
-      h += '<p class="legend" style="margin-top:8px">Puedes elegir varias fotos a la vez. Se suben al momento, ya reducidas, y aparecen enseguida en la Galería (no hace falta «Publicar cambios»). Sube solo fotos en las que la gente esté de acuerdo en salir.</p>';
+      h += (photos.length ? '<div style="margin-top:10px"><button class="btn ghost sm" data-reload-pstats>Actualizar vistas</button></div>' : "") + '<p class="legend" style="margin-top:8px">Las vistas cuentan cada vez que alguien abre una foto en grande (una por persona y sesión; las de la organización no cuentan). Puedes elegir varias fotos a la vez. Se suben al momento, ya reducidas, y aparecen enseguida en la Galería (no hace falta «Publicar cambios»). Sube solo fotos en las que la gente esté de acuerdo en salir.</p>';
       if (!list.length) h += '<p class="sub">Esta jornada todavía no tiene fotos.</p>';
-      else h += '<div class="gal-admin">' + list.map((x) => '<div class="gal-aitem"><img src="' + esc(photoUrl(x.thumb)) + '" alt=""><input type="text" maxlength="200" id="cap-' + esc(x.id) + '" data-cap="' + esc(x.id) + '" placeholder="Pie de foto (opcional)" value="' + esc(x.caption) + '">' + (ui.confirmPhoto === x.id ? '<div style="display:flex;gap:6px"><button class="btn sm" data-photo-del="' + esc(x.id) + '">Sí, borrar</button><button class="btn ghost sm" data-photo-cancel>Cancelar</button></div>' : '<button class="btn ghost sm" data-photo-ask="' + esc(x.id) + '">Borrar</button>') + "</div>").join("") + "</div>";
+      else h += '<div class="gal-admin">' + list.map((x) => '<div class="gal-aitem"><img src="' + esc(photoUrl(x.thumb)) + '" alt=""><span class="pv num">' + esc(pvText(x.id)) + '</span><input type="text" maxlength="200" id="cap-' + esc(x.id) + '" data-cap="' + esc(x.id) + '" placeholder="Pie de foto (opcional)" value="' + esc(x.caption) + '">' + (ui.confirmPhoto === x.id ? '<div style="display:flex;gap:6px"><button class="btn sm" data-photo-del="' + esc(x.id) + '">Sí, borrar</button><button class="btn ghost sm" data-photo-cancel>Cancelar</button></div>' : '<button class="btn ghost sm" data-photo-ask="' + esc(x.id) + '">Borrar</button>') + "</div>").join("") + "</div>";
     } else if (ui.atab === "visitas") {
       if (stats === null) { loadStats(); h += '<p class="sub">Cargando visitas…</p>'; }
       else if (statsError) h += '<p class="login-err">' + esc(statsError) + "</p>";
@@ -558,6 +585,11 @@
         h += '</div><div><h3 style="font-size:19px">Últimas visitas</h3>';
         h += recent.length ? '<div class="recent">' + recent.map((x) => '<div class="rrow"><span class="num rtime">' + esc(fmtVisit(x.at)) + '</span><span class="rplace">' + esc(placeName(x)) + '</span><small>' + esc(x.device || "") + "</small></div>").join("") + "</div>" : '<p class="sub">Todavía no hay visitas.</p>';
         h += "</div></div>";
+        if (photos.length) {
+          if (photoStats === null) loadPhotoStats();
+          const top = photos.map((x) => ({ x, v: (photoStats && photoStats[x.id]) || { views: 0, unique: 0 } })).filter((y) => y.v.views > 0).sort((a, b) => b.v.views - a.v.views).slice(0, 8);
+          h += '<h3 style="font-size:19px;margin-top:22px">Fotos más vistas</h3>' + (top.length ? '<div class="gal-admin">' + top.map((y) => '<div class="gal-aitem"><img src="' + esc(photoUrl(y.x.thumb)) + '" alt=""><b class="pv num">' + esc(pvText(y.x.id)) + '</b><small class="sub">Jornada ' + y.x.round_n + (y.x.caption ? " · " + esc(y.x.caption) : "") + "</small></div>").join("") + "</div>" : '<p class="sub">Todavía nadie ha abierto ninguna foto.</p>');
+        }
         h += '<p class="legend">Se cuenta una visita cada vez que alguien abre la web (una por sesión del navegador, aunque recargue). «Personas distintas» es aproximado: cuenta navegadores. La ubicación es aproximada (ciudad según la conexión a internet; con datos móviles o VPN puede salir otra ciudad cercana) y no se guarda la IP ni ningún dato personal. Contando desde el ' + esc(stats.first_day ? fmtDate(stats.first_day) : fmtDate(todayISO())) + '.</p><button class="btn ghost sm" data-reload-stats>Actualizar</button>';
       }
     } else if (ui.atab === "semana") {
@@ -627,7 +659,8 @@
     if (t.dataset.unlogo) { falla(t.dataset.unlogo).logo = null; markDirty(); return render(); }
     if (t.hasAttribute("data-discard")) { S = clone(saved); dirty = false; return render(); }
     if (t.hasAttribute("data-save")) return save(t);
-    if (t.hasAttribute("data-reload-stats")) { stats = null; return render(); }
+    if (t.hasAttribute("data-reload-stats")) { stats = null; photoStats = null; return render(); }
+    if (t.hasAttribute("data-reload-pstats")) { photoStats = null; return render(); }
     if (t.dataset.photoAsk) { ui.confirmPhoto = t.dataset.photoAsk; return render(); }
     if (t.hasAttribute("data-photo-cancel")) { ui.confirmPhoto = null; return render(); }
     if (t.dataset.photoDel) { deletePhoto(t.dataset.photoDel); return; }
