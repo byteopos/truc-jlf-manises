@@ -211,8 +211,61 @@
       h += '<section class="card" aria-labelledby="last-h"><div class="corner">' + SUITS.espadas + '</div><div class="card-head"><div><h2 id="last-h">Últimos resultados</h2><div class="sub">Jornada ' + lr.n + " · " + esc(fmtDate(lr.date)) + " · " + esc(falla(lr.host).short) + '</div></div><span class="chip red">' + nets + (nets === 1 ? " victoria" : " victorias") + " 3-0</span></div><div class=\"matches\" style=\"grid-template-columns:1fr\">" + lr.matches.map((m) => matchRow(m)).join("") + "</div></section>";
     }
     h += "</div>";
+    if (photos.length) {
+      const last = photos.filter((x) => x.round_n === photos[0].round_n).slice(0, 6);
+      h += '<section class="card" aria-labelledby="gal-h"><div class="card-head"><div><h2 id="gal-h">Fotos de la jornada ' + photos[0].round_n + '</h2><div class="sub">Lo que pasó en el casal</div></div><button class="link" data-go="galeria">Ver todas las fotos</button></div><div class="gal-grid">' + last.map((x) => galThumb(x)).join("") + "</div></section>";
+    }
     return h;
   }
+
+  // ---------- galería ----------
+  function galThumb(x) {
+    return '<button class="gal-item" data-photo-open="' + esc(x.id) + '" aria-label="Ver foto' + (x.caption ? ": " + esc(x.caption) : "") + '"><img src="' + esc(photoUrl(x.thumb)) + '" alt="' + esc(x.caption || "Foto de la jornada " + x.round_n) + '" loading="lazy"></button>';
+  }
+  function viewGaleria() {
+    let h = '<div class="section-title"><div><h2>Galería</h2><p>Las fotos de cada jornada, de casal en casal.</p></div></div>';
+    if (!photos.length) return h + '<section class="card"><p class="sub" style="margin:0">Todavía no hay fotos. La organización las irá subiendo después de cada jornada.</p></section>';
+    const rounds = Array.from(new Set(photos.map((x) => x.round_n)));
+    rounds.forEach((n) => {
+      const r = S.rounds.find((x) => x.n === n), f = r && falla(r.host), list = photos.filter((x) => x.round_n === n);
+      h += '<section class="card"><div class="card-head"><div><h2>Jornada ' + n + "</h2>" + (r ? '<div class="sub">' + esc(fmtDate(r.date, true)) + (f ? " · " + esc(f.name) : "") + " · " + list.length + (list.length === 1 ? " foto" : " fotos") + "</div>" : "") + "</div>" + (f ? crest(f, "lg") : "") + '</div><div class="gal-grid">' + list.map((x) => galThumb(x)).join("") + "</div></section>";
+    });
+    return h;
+  }
+  function openLightbox(id) {
+    const i = photos.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    ui.lightbox = i; drawLightbox();
+  }
+  function drawLightbox() {
+    let lb = document.getElementById("lightbox");
+    if (ui.lightbox == null) { if (lb) lb.remove(); document.body.style.overflow = ""; return; }
+    const x = photos[ui.lightbox];
+    if (!x) { ui.lightbox = null; return drawLightbox(); }
+    const same = photos.filter((y) => y.round_n === x.round_n), k = same.indexOf(x);
+    if (!lb) { lb = document.createElement("div"); lb.id = "lightbox"; lb.className = "lightbox"; lb.setAttribute("role", "dialog"); lb.setAttribute("aria-modal", "true"); document.body.appendChild(lb); }
+    document.body.style.overflow = "hidden";
+    lb.innerHTML = '<button class="lb-close" data-lb="close" aria-label="Cerrar">×</button>' + (same.length > 1 ? '<button class="lb-nav prev" data-lb="prev" aria-label="Foto anterior">‹</button><button class="lb-nav next" data-lb="next" aria-label="Foto siguiente">›</button>' : "") + '<figure><img src="' + esc(photoUrl(x.path)) + '" alt="' + esc(x.caption || "Foto de la jornada " + x.round_n) + '"><figcaption>' + (x.caption ? "<b>" + esc(x.caption) + "</b> · " : "") + "Jornada " + x.round_n + " · " + (k + 1) + " de " + same.length + "</figcaption></figure>";
+  }
+  function stepLightbox(d) {
+    const x = photos[ui.lightbox]; if (!x) return;
+    const same = photos.filter((y) => y.round_n === x.round_n), k = same.indexOf(x);
+    const nx = same[(k + d + same.length) % same.length];
+    ui.lightbox = photos.indexOf(nx); drawLightbox();
+  }
+  document.addEventListener("click", (e) => {
+    const o = e.target.closest("[data-photo-open]");
+    if (o) { openLightbox(o.dataset.photoOpen); return; }
+    const b = e.target.closest("[data-lb]");
+    if (b) { const a = b.dataset.lb; if (a === "close") { ui.lightbox = null; drawLightbox(); } else stepLightbox(a === "next" ? 1 : -1); return; }
+    if (e.target.id === "lightbox") { ui.lightbox = null; drawLightbox(); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (ui.lightbox == null) return;
+    if (e.key === "Escape") { ui.lightbox = null; drawLightbox(); }
+    else if (e.key === "ArrowRight") stepLightbox(1);
+    else if (e.key === "ArrowLeft") stepLightbox(-1);
+  });
 
   function viewClasificacion(C) {
     let h = '<div class="section-title"><div><h2>Clasificación</h2><p>Cada cama ganada suma 1 punto. Cada partida se juega a 3 camas.</p></div><div class="seg" role="group" aria-label="Tipo de clasificación"><button data-table="parejas" aria-pressed="' + (ui.table === "parejas") + '">Parejas</button><button data-table="fallas" aria-pressed="' + (ui.table === "fallas") + '">Copa de Fallas</button></div></div>';
@@ -358,6 +411,11 @@
       if (has("provisional")) out.push("Jornada " + f.n + ": " + (f.provisional ? "marcada como posibles cruces" : "cruces confirmados"));
       return [has("date") || has("host") ? "Fechas" : "Cruces", out.join(". ") || "Cambió la jornada " + f.n];
     }
+    if (e.entity === "photos") {
+      if (e.action === "insert") return ["Fotos", "Subió una foto a la jornada " + f.round_n];
+      if (e.action === "delete") return ["Fotos", "Borró una foto de la jornada " + f.round_n];
+      return ["Fotos", "Pie de foto (jornada " + f.round_n + "): «" + (f.caption || "—") + "»"];
+    }
     if (e.entity === "settings") {
       if (has("notice")) out.push("Aviso propio: «" + (f.notice || "—") + "»");
       if (has("jlf_logo")) out.push("Cambió el logo de la JLF");
@@ -426,7 +484,7 @@
   const SCORE_OPTS = ["", "3-0", "2-1", "1-2", "0-3"];
   function viewAdmin(C) {
     let h = '<section class="card admin"><h2>' + SUITS.bastos.replace("<svg", '<svg width="28"') + ' Modo organización <button class="btn ghost sm" data-logout style="margin-left:auto">Cerrar sesión</button></h2><div class="who-line">Sesión: <b>' + esc(session.u) + '</b> <span class="chip ' + (isRoot() ? "red" : "ghost") + '">' + ROLE_NAME[session.role] + '</span></div><div class="sub">Zona privada de la organización. Los cambios se ven en la web al pulsar «Publicar cambios».</div><div class="atabs" role="group">';
-    const ATABS = [["resultados", "Resultados"], ["cruces", "Cruces"], ["parejas", "Jugadores"], ["logos", "Escudos"], ["semana", "Semana y aviso"], ["visitas", "Visitas"]];
+    const ATABS = [["resultados", "Resultados"], ["cruces", "Cruces"], ["parejas", "Jugadores"], ["logos", "Escudos"], ["semana", "Semana y aviso"], ["fotos", "Fotos"], ["visitas", "Visitas"]];
     if (isRoot()) ATABS.push(["fechas", "Fechas y casales"], ["usuarios", "Usuarios"], ["auditoria", "Auditoría"]);
     if (!ATABS.some(([k]) => k === ui.atab)) ui.atab = "resultados";
     ATABS.forEach(([k, l]) => (h += '<button data-atab="' + k + '" aria-pressed="' + (ui.atab === k) + '">' + l + "</button>"));
@@ -477,6 +535,12 @@
         if (ui.confirmDel) { const x = users.find((y) => y.id === ui.confirmDel); if (x) h += '<div class="notice" style="margin-top:12px"><span>¿Eliminar a <b>' + esc(x.username) + '</b>? No podrá volver a entrar.</span><button class="btn sm" data-deluser-ok="' + esc(x.id) + '">Sí, eliminar</button><button class="btn ghost sm" data-deluser-no>Cancelar</button></div>'; }
         h += '<h3 style="font-size:19px;margin-top:18px">Nuevo usuario</h3><div class="form-grid" style="margin-top:8px"><input type="text" id="nu-name" placeholder="Usuario" autocomplete="off" autocapitalize="none" aria-label="Nuevo usuario"><input type="password" id="nu-pass" placeholder="Contraseña" autocomplete="new-password" aria-label="Contraseña del nuevo usuario"><select id="nu-role" aria-label="Tipo de usuario"><option value="admin">Organización</option><option value="root">Administrador principal</option></select><button class="btn sm" data-adduser>Añadir usuario</button></div><p class="legend">Organización: resultados, cruces, jugadores, escudos y avisos. Administrador principal: además, fechas, casales y usuarios. Los cambios de usuarios se aplican al momento, sin pulsar «Publicar cambios». Mínimo 8 caracteres por contraseña.</p>';
       }
+    } else if (ui.atab === "fotos") {
+      const list = photos.filter((x) => x.round_n === R.n);
+      h += '<div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap"><div style="flex:1 1 260px;max-width:360px">' + roundSel("a-round") + '</div><label class="btn gold' + (ui.upBusy ? " busy" : "") + '">' + (ui.upBusy ? esc(ui.upBusy) : "Subir fotos de esta jornada") + '<input type="file" accept="image/*" multiple data-gal-upload hidden' + (ui.upBusy ? " disabled" : "") + "></label></div>";
+      h += '<p class="legend" style="margin-top:8px">Puedes elegir varias fotos a la vez. Se suben al momento, ya reducidas, y aparecen enseguida en la Galería (no hace falta «Publicar cambios»). Sube solo fotos en las que la gente esté de acuerdo en salir.</p>';
+      if (!list.length) h += '<p class="sub">Esta jornada todavía no tiene fotos.</p>';
+      else h += '<div class="gal-admin">' + list.map((x) => '<div class="gal-aitem"><img src="' + esc(photoUrl(x.thumb)) + '" alt=""><input type="text" maxlength="200" id="cap-' + esc(x.id) + '" data-cap="' + esc(x.id) + '" placeholder="Pie de foto (opcional)" value="' + esc(x.caption) + '">' + (ui.confirmPhoto === x.id ? '<div style="display:flex;gap:6px"><button class="btn sm" data-photo-del="' + esc(x.id) + '">Sí, borrar</button><button class="btn ghost sm" data-photo-cancel>Cancelar</button></div>' : '<button class="btn ghost sm" data-photo-ask="' + esc(x.id) + '">Borrar</button>') + "</div>").join("") + "</div>";
     } else if (ui.atab === "visitas") {
       if (stats === null) { loadStats(); h += '<p class="sub">Cargando visitas…</p>'; }
       else if (statsError) h += '<p class="login-err">' + esc(statsError) + "</p>";
@@ -516,7 +580,7 @@
   }
 
   // ---------- shell ----------
-  const VIEWS = [["inicio", "Inicio"], ["clasificacion", "Clasificación"], ["calendario", "Calendario"], ["parejas", "Parejas"], ["fallas", "Fallas"]];
+  const VIEWS = [["inicio", "Inicio"], ["clasificacion", "Clasificación"], ["calendario", "Calendario"], ["parejas", "Parejas"], ["fallas", "Fallas"], ["galeria", "Galería"]];
   function render() {
     if (!S) {
       document.getElementById("app").innerHTML = '<header class="hero"><div class="wrap"><div class="hero-inner"><div class="jlf">JLF</div><div class="hero-text"><div class="eyebrow">Junta Local Fallera de Manises</div><h1>Campionat de <em>Truc</em></h1><p>' + (loadError ? esc(loadError) : "Cargando resultados, cruces y clasificación…") + "</p></div></div></div></header>";
@@ -528,7 +592,7 @@
     const pct = Math.round((C.playedRounds / S.rounds.length) * 100);
     let h = '<header class="hero"><div class="wrap"><div class="hero-inner"><div class="jlf">' + jlf + '</div><div class="hero-text"><div class="eyebrow">Junta Local Fallera de Manises · Temporada ' + esc(S.season) + '</div><h1>Campionat de <em>Truc</em></h1><p>' + allPairs().length + " parejas, " + teams().length + " fallas y " + S.rounds.length + ' jornadas de casal en casal. Aquí se canta el truc, se apunta cada partida y se sabe quién manda en Manises.</p></div><div class="fan" aria-hidden="true">' + SUIT_ORDER.map((s, i) => '<div class="pc"><b>' + ["1", "3", "7", "12"][i] + "</b>" + SUITS[s] + "</div>").join("") + '</div></div><div class="progress"><span class="num">Jornada ' + C.playedRounds + " de " + S.rounds.length + '</span><div class="bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + Math.max(pct, 2) + '%"></i></div><span>' + (C.next ? "Próxima: " + esc(fmtDate(C.next.date)) : "¡Campeonato terminado!") + "</span></div></div></header>";
     h += '<nav class="tabs" aria-label="Secciones"><div class="wrap">' + VIEWS.map(([k, l]) => '<button class="tab" data-go="' + k + '"' + (ui.view === k ? ' aria-current="page"' : "") + ">" + l + "</button>").join("") + ('<button class="tab admin-tab" data-go="admin"' + (ui.view === "admin" ? ' aria-current="page"' : "") + ">Organización" + (dirty ? " •" : "") + "</button>") + "</div></nav>";
-    const fn = { inicio: viewInicio, clasificacion: viewClasificacion, calendario: viewCalendario, parejas: viewParejas, fallas: viewFallas, admin: session ? viewAdmin : viewLogin }[ui.view] || viewInicio;
+    const fn = { inicio: viewInicio, clasificacion: viewClasificacion, calendario: viewCalendario, parejas: viewParejas, fallas: viewFallas, galeria: viewGaleria, admin: session ? viewAdmin : viewLogin }[ui.view] || viewInicio;
     h += '<main class="wrap">' + fn(C) + "</main>";
     h += '<footer class="wrap">Campionat de Truc · Junta Local Fallera de Manises · Actualizado el ' + esc(fmtDate(S.updated)) + '<span class="sign">Realizada por <strong>KazaIA</strong></span></footer>';
     const y = window.scrollY;
@@ -564,6 +628,9 @@
     if (t.hasAttribute("data-discard")) { S = clone(saved); dirty = false; return render(); }
     if (t.hasAttribute("data-save")) return save(t);
     if (t.hasAttribute("data-reload-stats")) { stats = null; return render(); }
+    if (t.dataset.photoAsk) { ui.confirmPhoto = t.dataset.photoAsk; return render(); }
+    if (t.hasAttribute("data-photo-cancel")) { ui.confirmPhoto = null; return render(); }
+    if (t.dataset.photoDel) { deletePhoto(t.dataset.photoDel); return; }
     if (t.dataset.setpw && isRoot()) {
       const id = t.dataset.setpw, p1 = document.getElementById("pw1-" + id).value, p2 = document.getElementById("pw2-" + id).value;
       if (p1.length < 8) return toast("La contraseña necesita al menos 8 caracteres.");
@@ -627,6 +694,12 @@
       return;
     }
     if (t.hasAttribute("data-photo") && t.files && t.files[0]) { readSheetPhoto(t.files[0]); return; }
+    if (t.hasAttribute("data-gal-upload") && t.files && t.files.length) { uploadPhotos(Array.from(t.files)); return; }
+    if (t.dataset.cap) {
+      const { error } = await sb.from("photos").update({ caption: t.value.slice(0, 200) }).eq("id", t.dataset.cap);
+      if (error) toast("No se pudo guardar el pie de foto."); else { const x = photos.find((y) => y.id === t.dataset.cap); if (x) x.caption = t.value.slice(0, 200); toast("Pie de foto guardado."); }
+      return;
+    }
     if (t.dataset.logo && t.files && t.files[0]) {
       try {
         const url = await imageToDataUrl(t.files[0], t.dataset.logo === "__jlf" ? 260 : 220);
@@ -642,6 +715,51 @@
     else if (t.id === "a-notice") { S.notice = t.value; markDirty(); }
   });
 
+  function resizeToBlob(file, size, quality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        const sc = Math.min(size / img.width, size / img.height, 1), w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        c.toBlob((b) => (b ? resolve({ blob: b, w, h }) : reject(new Error("img"))), "image/jpeg", quality);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("img")); };
+      img.src = url;
+    });
+  }
+  async function uploadPhotos(files) {
+    const R = S.rounds.find((r) => r.n === ui.adminRound);
+    if (!R) return;
+    let ok = 0, fail = 0;
+    for (let i = 0; i < files.length; i++) {
+      ui.upBusy = "Subiendo " + (i + 1) + " de " + files.length + "…"; render();
+      try {
+        const big = await resizeToBlob(files[i], 1600, 0.82), small = await resizeToBlob(files[i], 480, 0.75);
+        const id = window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+        const path = "J" + R.n + "/" + id + ".jpg", thumb = "J" + R.n + "/" + id + "_t.jpg";
+        const up1 = await sb.storage.from("galeria").upload(path, big.blob, { contentType: "image/jpeg", cacheControl: "31536000" });
+        if (up1.error) throw up1.error;
+        const up2 = await sb.storage.from("galeria").upload(thumb, small.blob, { contentType: "image/jpeg", cacheControl: "31536000" });
+        if (up2.error) throw up2.error;
+        const ins = await sb.from("photos").insert({ round_n: R.n, path, thumb, width: big.w, height: big.h, uploaded_by: session ? session.u : null });
+        if (ins.error) throw ins.error;
+        ok++;
+      } catch (e) { fail++; }
+    }
+    ui.upBusy = null;
+    await loadPhotos(); render();
+    toast(ok + (ok === 1 ? " foto subida" : " fotos subidas") + (fail ? ", " + fail + " con error" : "") + ".");
+  }
+  async function deletePhoto(id) {
+    const x = photos.find((y) => y.id === id);
+    if (!x) return;
+    const del = await sb.from("photos").delete().eq("id", id);
+    if (del.error) return toast("No se pudo borrar la foto.");
+    await sb.storage.from("galeria").remove([x.path, x.thumb]);
+    ui.confirmPhoto = null; await loadPhotos(); render(); toast("Foto borrada.");
+  }
   async function readSheetPhoto(file) {
     const R = S.rounds.find((r) => r.n === ui.adminRound);
     if (!R || !R.matches.length) return;
@@ -705,7 +823,13 @@
     ma.data.forEach((m) => { const r = next.rounds.find((x) => x.n === m.round_n); if (r) r.matches[m.idx] = { a: m.a, b: m.b, sa: m.sa, sb: m.sb }; });
     next.rounds.forEach((r) => (r.matches = r.matches.filter(Boolean)));
     saved = next; S = clone(next); dirty = false;
+    await loadPhotos();
   }
+  let photos = [];
+  async function loadPhotos() {
+    try { const { data, error } = await sb.from("photos").select("*").order("round_n", { ascending: false }).order("created_at"); if (!error) photos = data || []; } catch (e) {}
+  }
+  const photoUrl = (path) => (CFG.SUPABASE_URL || "") + "/storage/v1/object/public/galeria/" + path;
   const strip = (o) => JSON.stringify(o, (k, v) => (k.charAt(0) === "_" ? undefined : v));
   async function save(btn) {
     if (!sb || !session) return toast("Inicia sesión para publicar cambios.");
@@ -762,7 +886,7 @@
     let timer = null;
     sb.channel("truc-cambios").on("postgres_changes", { event: "*", schema: "public" }, () => {
       clearTimeout(timer);
-      timer = setTimeout(async () => { if (dirty) return; try { await loadAll(); render(); } catch (e) {} }, 800);
+      timer = setTimeout(async () => { if (dirty) { await loadPhotos(); if (ui.view === "galeria" || ui.atab === "fotos") render(); return; } try { await loadAll(); render(); } catch (e) {} }, 800);
     }).subscribe();
   })();
 })();

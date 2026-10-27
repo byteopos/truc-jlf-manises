@@ -317,3 +317,23 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 .arow.ph-ok { box-shadow: inset 4px 0 0 var(--win); padding-left: 10px; }
 .arow.ph-unsure { background: #fff1c9; box-shadow: inset 4px 0 0 var(--oros); padding-left: 10px; }
 .arow.ph-missing { background: #fde3e0; box-shadow: inset 4px 0 0 var(--loss); padding-left: 10px; }
+
+/* Galería */
+.gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.gal-item { padding: 0; border: 0; border-radius: 10px; overflow: hidden; background: var(--card-2); aspect-ratio: 4 / 3; cursor: zoom-in; max-width: 100%; }
+.gal-item img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .25s ease; }
+.gal-item:hover img { transform: scale(1.04); }
+.lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(5, 20, 15, .94); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.lightbox figure { margin: 0; display: grid; gap: 10px; justify-items: center; max-width: 100%; }
+.lightbox img { max-width: 100%; max-height: 80vh; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+.lightbox figcaption { color: var(--on-felt); font-size: 14px; text-align: center; }
+.lb-close, .lb-nav { position: absolute; border: 0; background: rgba(255,255,255,.12); color: #fff; width: 48px; height: 48px; border-radius: 50%; font-size: 30px; line-height: 1; display: grid; place-items: center; }
+.lb-close { top: max(14px, env(safe-area-inset-top, 0px)); right: max(14px, env(safe-area-inset-right, 0px)); }
+.lb-nav.prev { left: max(10px, env(safe-area-inset-left, 0px)); top: 50%; transform: translateY(-50%); }
+.lb-nav.next { right: max(10px, env(safe-area-inset-right, 0px)); top: 50%; transform: translateY(-50%); }
+.lb-close:hover, .lb-nav:hover { background: rgba(255,255,255,.25); }
+.gal-admin { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+.gal-aitem { display: grid; gap: 6px; padding: 8px; border-radius: 12px; background: var(--card-2); }
+.gal-aitem img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; }
+.btn.busy { opacity: .7; cursor: progress; }
+@media (prefers-reduced-motion: reduce) { .gal-item img { transition: none; } }
