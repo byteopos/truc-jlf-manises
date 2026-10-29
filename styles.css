@@ -364,3 +364,4 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 .ios-card h3 { margin: 0 0 8px; font-family: var(--display); font-weight: 400; }
 .ios-card ol { margin: 0 0 14px; padding-left: 20px; line-height: 1.5; }
 .ios-ico { display: inline-block; border: 1.5px solid currentColor; border-radius: 4px; padding: 0 4px; font-size: 12px; }
+.app-tiles .vtile { background: #fff4d6; }
