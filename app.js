@@ -385,6 +385,7 @@
     const ua = navigator.userAgent || "";
     const nav = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Navegador";
     const so = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iPhone/iPad" : /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "otro sistema";
+    if (isStandalone()) return "App instalada en " + so;
     return nav + " en " + so + (/Mobi/.test(ua) ? " (móvil)" : "");
   }
 
@@ -617,6 +618,27 @@
     S.rounds.filter((r) => r.n > 10).forEach((r, k) => { if (!g1[k]) return; r.matches = g1[k].concat(g2[k]).map(([a, b]) => ({ a, b, sa: null, sb: null })); });
   }
 
+  // ---------- app instalable ----------
+  const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  let installEvt = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; if (S) render(); });
+  window.addEventListener("appinstalled", () => { installEvt = null; toast("¡App instalada! Ya la tienes en tu pantalla de inicio."); if (S) render(); });
+  const canInstall = () => !isStandalone() && (installEvt || isIOS);
+  const installHidden = () => { try { return localStorage.getItem("truc-install-hide") === "1"; } catch (e) { return false; } };
+  function installCard() {
+    if (!canInstall() || installHidden()) return "";
+    return '<div class="install-card" role="note"><img src="/icon-192.png" alt="" width="48" height="48"><div><b>Llévate el campeonato en el móvil</b><br><small>Instala la app y entra con un toque desde tu pantalla de inicio. La web sigue igual.</small></div><div class="install-actions"><button class="btn gold" data-install>Instalar app</button><button class="install-x" data-install-hide aria-label="Ocultar">×</button></div></div>';
+  }
+  function iosHelp() {
+    if (!ui.iosHelp) return "";
+    return '<div class="ios-help" data-install-close><div class="ios-card" role="dialog" aria-label="Instalar en iPhone"><h3>Instalar en iPhone o iPad</h3><ol><li>Pulsa el botón <b>Compartir</b> <span class="ios-ico">⬆︎</span> de la barra del navegador.</li><li>Elige <b>Añadir a pantalla de inicio</b>. Si no lo ves, desliza la lista hacia abajo.</li><li>Pulsa <b>Añadir</b>. Aparecerá el icono «Truc JLF».</li></ol><button class="btn gold" data-install-close>Entendido</button></div></div>';
+  }
+  async function doInstall() {
+    if (installEvt) { installEvt.prompt(); try { await installEvt.userChoice; } catch (e) {} installEvt = null; return render(); }
+    if (isIOS) { ui.iosHelp = true; render(); }
+  }
+
   // ---------- shell ----------
   const VIEWS = [["inicio", "Inicio"], ["clasificacion", "Clasificación"], ["calendario", "Calendario"], ["parejas", "Parejas"], ["fallas", "Fallas"], ["galeria", "Galería"]];
   function render() {
@@ -633,8 +655,8 @@
     let h = (luto ? '<div class="luto-band" role="note"><div class="wrap">' + ribbon + "<span>" + esc(luto.text || "") + "</span></div></div>" : "") + '<header class="hero"><div class="wrap"><div class="hero-inner"><div class="jlf-wrap"><div class="jlf">' + jlf + "</div>" + (luto ? ribbon.replace('class="crespon"', 'class="crespon on-crest"') : "") + '</div><div class="hero-text"><div class="eyebrow">Junta Local Fallera de Manises · Temporada ' + esc(S.season) + '</div><h1>Campionat de <em>Truc</em></h1><p>' + allPairs().length + " parejas, " + teams().length + " fallas y " + S.rounds.length + ' jornadas de casal en casal. Aquí se canta el truc, se apunta cada partida y se sabe quién manda en Manises.</p></div><div class="fan" aria-hidden="true">' + SUIT_ORDER.map((s, i) => '<div class="pc"><b>' + ["1", "3", "7", "12"][i] + "</b>" + SUITS[s] + "</div>").join("") + '</div></div><div class="progress"><span class="num">Jornada ' + C.playedRounds + " de " + S.rounds.length + '</span><div class="bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + Math.max(pct, 2) + '%"></i></div><span>' + (C.next ? "Próxima: " + esc(fmtDate(C.next.date)) : "¡Campeonato terminado!") + "</span></div></div></header>";
     h += '<nav class="tabs" aria-label="Secciones"><div class="wrap">' + VIEWS.map(([k, l]) => '<button class="tab" data-go="' + k + '"' + (ui.view === k ? ' aria-current="page"' : "") + ">" + l + "</button>").join("") + ('<button class="tab admin-tab" data-go="admin"' + (ui.view === "admin" ? ' aria-current="page"' : "") + ">Organización" + (dirty ? " •" : "") + "</button>") + "</div></nav>";
     const fn = { inicio: viewInicio, clasificacion: viewClasificacion, calendario: viewCalendario, parejas: viewParejas, fallas: viewFallas, galeria: viewGaleria, admin: session ? viewAdmin : viewLogin }[ui.view] || viewInicio;
-    h += '<main class="wrap">' + fn(C) + "</main>";
-    h += '<footer class="wrap">Campionat de Truc · Junta Local Fallera de Manises · Actualizado el ' + esc(fmtDate(S.updated)) + '<span class="sign">Realizada por <strong>KazaIA</strong></span></footer>';
+    h += '<main class="wrap">' + (ui.view === "inicio" ? installCard() : "") + fn(C) + "</main>";
+    h += '<footer class="wrap">Campionat de Truc · Junta Local Fallera de Manises · Actualizado el ' + esc(fmtDate(S.updated)) + '<span class="sign">Realizada por <strong>KazaIA</strong></span>' + (canInstall() ? '<button class="btn ghost foot-install" data-install>📲 Instalar app</button>' : "") + "</footer>" + iosHelp();
     const y = window.scrollY;
     app.innerHTML = h;
     window.scrollTo(0, y);
@@ -658,6 +680,9 @@
     const t = e.target.closest("button, [data-go]");
     if (!t) return;
     if (t.dataset.go) return go(t.dataset.go);
+    if (t.hasAttribute("data-install")) return doInstall();
+    if (t.hasAttribute("data-install-hide")) { try { localStorage.setItem("truc-install-hide", "1"); } catch (x) {} return render(); }
+    if (t.hasAttribute("data-install-close")) { ui.iosHelp = false; return render(); }
     if (t.dataset.table) { ui.table = t.dataset.table; return render(); }
     if (t.dataset.atab) { ui.atab = t.dataset.atab; return render(); }
     const R = S.rounds.find((r) => r.n === ui.adminRound);

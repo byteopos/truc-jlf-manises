@@ -350,3 +350,17 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 .photo-target { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 12px; border-radius: 12px; background: #fff7df; border: 1.5px solid var(--oros); }
 .photo-target b { font-size: 15px; }
 .move-photo { font-size: 12.5px; padding: 6px 8px; }
+
+.install-card { color: var(--ink); display: flex; align-items: center; gap: 12px; margin: 16px 0 4px; padding: 12px 14px; border-radius: 16px; background: var(--card); border: 2px solid var(--oros); box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.install-card img { border-radius: 12px; flex: none; }
+.install-card > div:nth-child(2) { flex: 1; min-width: 0; line-height: 1.3; }
+.install-card small { color: var(--ink-soft); }
+.install-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.install-x { background: none; border: 0; font-size: 22px; line-height: 1; color: var(--ink-soft); cursor: pointer; padding: 4px 6px; }
+@media (max-width: 520px) { .install-card { flex-wrap: wrap; } .install-actions { width: 100%; justify-content: space-between; } }
+.foot-install { display: block; margin: 12px auto 0; }
+.ios-help { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: flex-end; justify-content: center; z-index: 60; padding: 16px; }
+.ios-card { background: var(--card); color: var(--ink); border-radius: 18px; padding: 18px 18px 16px; max-width: 420px; width: 100%; }
+.ios-card h3 { margin: 0 0 8px; font-family: var(--display); font-weight: 400; }
+.ios-card ol { margin: 0 0 14px; padding-left: 20px; line-height: 1.5; }
+.ios-ico { display: inline-block; border: 1.5px solid currentColor; border-radius: 4px; padding: 0 4px; font-size: 12px; }

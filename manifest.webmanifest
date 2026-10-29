@@ -1,0 +1,18 @@
+{
+  "name": "Campionat de Truc · JLF Manises",
+  "short_name": "Truc JLF",
+  "description": "Resultados, clasificación, calendario, parejas y fotos del Campionat de Truc de la Junta Local Fallera de Manises.",
+  "id": "/",
+  "start_url": "/?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "es",
+  "background_color": "#0a2e22",
+  "theme_color": "#0a2e22",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
