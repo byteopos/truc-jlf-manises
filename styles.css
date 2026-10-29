@@ -339,3 +339,10 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 @media (prefers-reduced-motion: reduce) { .gal-item img { transition: none; } }
 
 .pv { font-size: 12.5px; font-weight: 800; color: var(--ink-soft); }
+
+/* Luto: crespón negro */
+.luto-band { background: #111; color: #f1f1f1; border-bottom: 3px solid #000; }
+.luto-band .wrap { display: flex; align-items: center; gap: 12px; padding-block: 10px; font-size: 14px; line-height: 1.4; }
+.luto-band .crespon { width: 16px; flex: none; color: #f1f1f1; }
+.jlf-wrap { position: relative; flex: none; }
+.crespon.on-crest { position: absolute; top: -8px; right: -8px; width: 26px; color: #111; filter: drop-shadow(0 0 1.5px rgba(255,255,255,.9)); }
