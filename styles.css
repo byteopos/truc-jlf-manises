@@ -346,3 +346,7 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 .luto-band .crespon { width: 16px; flex: none; color: #f1f1f1; }
 .jlf-wrap { position: relative; flex: none; }
 .crespon.on-crest { position: absolute; top: -8px; right: -8px; width: 26px; color: #111; filter: drop-shadow(0 0 1.5px rgba(255,255,255,.9)); }
+
+.photo-target { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 12px; border-radius: 12px; background: #fff7df; border: 1.5px solid var(--oros); }
+.photo-target b { font-size: 15px; }
+.move-photo { font-size: 12.5px; padding: 6px 8px; }

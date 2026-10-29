@@ -440,6 +440,7 @@
     if (e.entity === "photos") {
       if (e.action === "insert") return ["Fotos", "Subió una foto a la jornada " + f.round_n];
       if (e.action === "delete") return ["Fotos", "Borró una foto de la jornada " + f.round_n];
+      if (ch.round_n) return ["Fotos", "Movió una foto de la jornada " + ch.round_n.antes + " a la " + ch.round_n.despues];
       return ["Fotos", "Pie de foto (jornada " + f.round_n + "): «" + (f.caption || "—") + "»"];
     }
     if (e.entity === "settings") {
@@ -516,7 +517,7 @@
     if (!ATABS.some(([k]) => k === ui.atab)) ui.atab = "resultados";
     ATABS.forEach(([k, l]) => (h += '<button data-atab="' + k + '" aria-pressed="' + (ui.atab === k) + '">' + l + "</button>"));
     h += "</div>";
-    const roundSel = (id) => '<label class="field">Jornada<select id="' + id + '">' + S.rounds.map((r) => '<option value="' + r.n + '"' + (ui.adminRound === r.n ? " selected" : "") + ">J" + r.n + " · " + esc(fmtDate(r.date)) + " · " + esc(falla(r.host).short) + (r._st === "played" ? " ✓" : "") + "</option>").join("") + "</select></label>";
+    const roundSel = (id) => '<label class="field">Jornada<select id="' + id + '">' + S.rounds.map((r) => '<option value="' + r.n + '"' + (ui.adminRound === r.n ? " selected" : "") + ">J" + r.n + " · " + esc(fmtDate(r.date)) + " · " + esc((falla(r.host) || {}).short || "") + (r._st === "played" ? " ✓" : "") + "</option>").join("") + "</select></label>";
     if (ui.adminRound == null) ui.adminRound = (C.next || S.rounds[0]).n;
     const R = S.rounds.find((r) => r.n === ui.adminRound);
     if (ui.atab === "resultados") {
@@ -563,12 +564,16 @@
         h += '<h3 style="font-size:19px;margin-top:18px">Nuevo usuario</h3><div class="form-grid" style="margin-top:8px"><input type="text" id="nu-name" placeholder="Usuario" autocomplete="off" autocapitalize="none" aria-label="Nuevo usuario"><input type="password" id="nu-pass" placeholder="Contraseña" autocomplete="new-password" aria-label="Contraseña del nuevo usuario"><select id="nu-role" aria-label="Tipo de usuario"><option value="admin">Organización</option><option value="root">Administrador principal</option></select><button class="btn sm" data-adduser>Añadir usuario</button></div><p class="legend">Organización: resultados, cruces, jugadores, escudos y avisos. Administrador principal: además, fechas, casales y usuarios. Los cambios de usuarios se aplican al momento, sin pulsar «Publicar cambios». Mínimo 8 caracteres por contraseña.</p>';
       }
     } else if (ui.atab === "fotos") {
-      const list = photos.filter((x) => x.round_n === R.n);
+      if (ui.photoRound == null) { const past = S.rounds.filter((r) => r.date <= todayISO()); ui.photoRound = (past[past.length - 1] || S.rounds[0]).n; }
+      const PR = S.rounds.find((r) => r.n === ui.photoRound) || S.rounds[0], PF = falla(PR.host);
+      const list = photos.filter((x) => x.round_n === PR.n);
       if (photoStats === null) loadPhotoStats();
-      h += '<div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap"><div style="flex:1 1 260px;max-width:360px">' + roundSel("a-round") + '</div><label class="btn gold' + (ui.upBusy ? " busy" : "") + '">' + (ui.upBusy ? esc(ui.upBusy) : "Subir fotos de esta jornada") + '<input type="file" accept="image/*" multiple data-gal-upload hidden' + (ui.upBusy ? " disabled" : "") + "></label></div>";
+      const optsR = (sel) => S.rounds.map((r) => '<option value="' + r.n + '"' + (sel === r.n ? " selected" : "") + ">J" + r.n + " · " + esc(fmtDate(r.date)) + " · " + esc((falla(r.host) || {}).short || "") + "</option>").join("");
+      h += '<div class="photo-target">' + (PF ? crest(PF, "lg") : "") + '<div><small class="sub">Las fotos se guardan en</small><br><b>Jornada ' + PR.n + " · " + esc(fmtDate(PR.date, true)) + " · " + esc(PF ? PF.name : "") + "</b></div></div>";
+      h += '<div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap"><div style="flex:1 1 260px;max-width:360px"><label class="field">Jornada de las fotos<select id="a-photo-round">' + optsR(PR.n) + "</select></label></div>" + '<label class="btn gold' + (ui.upBusy ? " busy" : "") + '">' + (ui.upBusy ? esc(ui.upBusy) : "Subir fotos de esta jornada") + '<input type="file" accept="image/*" multiple data-gal-upload hidden' + (ui.upBusy ? " disabled" : "") + "></label></div>";
       h += (photos.length ? '<div style="margin-top:10px"><button class="btn ghost sm" data-reload-pstats>Actualizar vistas</button></div>' : "") + '<p class="legend" style="margin-top:8px">Las vistas cuentan cada vez que alguien abre una foto en grande (una por persona y sesión; las de la organización no cuentan). Puedes elegir varias fotos a la vez. Se suben al momento, ya reducidas, y aparecen enseguida en la Galería (no hace falta «Publicar cambios»). Sube solo fotos en las que la gente esté de acuerdo en salir.</p>';
       if (!list.length) h += '<p class="sub">Esta jornada todavía no tiene fotos.</p>';
-      else h += '<div class="gal-admin">' + list.map((x) => '<div class="gal-aitem"><img src="' + esc(photoUrl(x.thumb)) + '" alt=""><span class="pv num">' + esc(pvText(x.id)) + '</span><input type="text" maxlength="200" id="cap-' + esc(x.id) + '" data-cap="' + esc(x.id) + '" placeholder="Pie de foto (opcional)" value="' + esc(x.caption) + '">' + (ui.confirmPhoto === x.id ? '<div style="display:flex;gap:6px"><button class="btn sm" data-photo-del="' + esc(x.id) + '">Sí, borrar</button><button class="btn ghost sm" data-photo-cancel>Cancelar</button></div>' : '<button class="btn ghost sm" data-photo-ask="' + esc(x.id) + '">Borrar</button>') + "</div>").join("") + "</div>";
+      else h += '<div class="gal-admin">' + list.map((x) => '<div class="gal-aitem"><img src="' + esc(photoUrl(x.thumb)) + '" alt=""><span class="pv num">' + esc(pvText(x.id)) + '</span><input type="text" maxlength="200" id="cap-' + esc(x.id) + '" data-cap="' + esc(x.id) + '" placeholder="Pie de foto (opcional)" value="' + esc(x.caption) + '">' + '<select class="move-photo" id="mv-' + esc(x.id) + '" data-move-photo="' + esc(x.id) + '" aria-label="Mover a otra jornada">' + S.rounds.map((r) => '<option value="' + r.n + '"' + (x.round_n === r.n ? " selected" : "") + ">" + (x.round_n === r.n ? "En J" + r.n + " · " + esc((falla(r.host) || {}).short || "") : "Mover a J" + r.n + " · " + esc((falla(r.host) || {}).short || "")) + "</option>").join("") + "</select>" + (ui.confirmPhoto === x.id ? '<div style="display:flex;gap:6px"><button class="btn sm" data-photo-del="' + esc(x.id) + '">Sí, borrar</button><button class="btn ghost sm" data-photo-cancel>Cancelar</button></div>' : '<button class="btn ghost sm" data-photo-ask="' + esc(x.id) + '">Borrar</button>') + "</div>").join("") + "</div>";
     } else if (ui.atab === "visitas") {
       if (stats === null) { loadStats(); h += '<p class="sub">Cargando visitas…</p>'; }
       else if (statsError) h += '<p class="login-err">' + esc(statsError) + "</p>";
@@ -731,6 +736,12 @@
       return;
     }
     if (t.hasAttribute("data-photo") && t.files && t.files[0]) { readSheetPhoto(t.files[0]); return; }
+    if (t.id === "a-photo-round") { ui.photoRound = +t.value; return render(); }
+    if (t.dataset.movePhoto) {
+      const nr = +t.value, { error } = await sb.from("photos").update({ round_n: nr }).eq("id", t.dataset.movePhoto);
+      if (error) { toast("No se pudo mover la foto."); return render(); }
+      await loadPhotos(); render(); toast("Foto movida a la jornada " + nr + "."); return;
+    }
     if (t.hasAttribute("data-gal-upload") && t.files && t.files.length) { uploadPhotos(Array.from(t.files)); return; }
     if (t.dataset.cap) {
       const { error } = await sb.from("photos").update({ caption: t.value.slice(0, 200) }).eq("id", t.dataset.cap);
@@ -768,7 +779,7 @@
     });
   }
   async function uploadPhotos(files) {
-    const R = S.rounds.find((r) => r.n === ui.adminRound);
+    const R = S.rounds.find((r) => r.n === ui.photoRound);
     if (!R) return;
     let ok = 0, fail = 0;
     for (let i = 0; i < files.length; i++) {
