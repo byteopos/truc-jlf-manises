@@ -503,6 +503,13 @@
     if (error) { statsError = "No se pudieron cargar las visitas. Vuelve a entrar y prueba de nuevo."; stats = {}; } else stats = data || {};
     render();
   }
+  let appStats = null, appStatsError = null;
+  async function loadAppStats() {
+    appStatsError = null;
+    const { data, error } = await sb.rpc("app_install_stats");
+    if (error) { appStatsError = "No se pudieron cargar las instalaciones. Vuelve a entrar y prueba de nuevo."; appStats = {}; } else appStats = data || {};
+    render();
+  }
   async function loadUsers() {
     usersError = null;
     try { users = (await adminUsers("list")).users; } catch (x) { usersError = x.message; users = []; }
@@ -513,7 +520,7 @@
   const SCORE_OPTS = ["", "3-0", "2-1", "1-2", "0-3"];
   function viewAdmin(C) {
     let h = '<section class="card admin"><h2>' + SUITS.bastos.replace("<svg", '<svg width="28"') + ' Modo organización <button class="btn ghost sm" data-logout style="margin-left:auto">Cerrar sesión</button></h2><div class="who-line">Sesión: <b>' + esc(session.u) + '</b> <span class="chip ' + (isRoot() ? "red" : "ghost") + '">' + ROLE_NAME[session.role] + '</span></div><div class="sub">Zona privada de la organización. Los cambios se ven en la web al pulsar «Publicar cambios».</div><div class="atabs" role="group">';
-    const ATABS = [["resultados", "Resultados"], ["cruces", "Cruces"], ["parejas", "Jugadores"], ["logos", "Escudos"], ["semana", "Semana y aviso"], ["fotos", "Fotos"], ["visitas", "Visitas"]];
+    const ATABS = [["resultados", "Resultados"], ["cruces", "Cruces"], ["parejas", "Jugadores"], ["logos", "Escudos"], ["semana", "Semana y aviso"], ["fotos", "Fotos"], ["visitas", "Visitas"], ["app", "App"]];
     if (isRoot()) ATABS.push(["fechas", "Fechas y casales"], ["usuarios", "Usuarios"], ["auditoria", "Auditoría"]);
     if (!ATABS.some(([k]) => k === ui.atab)) ui.atab = "resultados";
     ATABS.forEach(([k, l]) => (h += '<button data-atab="' + k + '" aria-pressed="' + (ui.atab === k) + '">' + l + "</button>"));
@@ -575,6 +582,23 @@
       h += (photos.length ? '<div style="margin-top:10px"><button class="btn ghost sm" data-reload-pstats>Actualizar vistas</button></div>' : "") + '<p class="legend" style="margin-top:8px">Las vistas cuentan cada vez que alguien abre una foto en grande (una por persona y sesión; las de la organización no cuentan). Puedes elegir varias fotos a la vez. Se suben al momento, ya reducidas, y aparecen enseguida en la Galería (no hace falta «Publicar cambios»). Sube solo fotos en las que la gente esté de acuerdo en salir.</p>';
       if (!list.length) h += '<p class="sub">Esta jornada todavía no tiene fotos.</p>';
       else h += '<div class="gal-admin">' + list.map((x) => '<div class="gal-aitem"><img src="' + esc(photoUrl(x.thumb)) + '" alt=""><span class="pv num">' + esc(pvText(x.id)) + '</span><input type="text" maxlength="200" id="cap-' + esc(x.id) + '" data-cap="' + esc(x.id) + '" placeholder="Pie de foto (opcional)" value="' + esc(x.caption) + '">' + '<select class="move-photo" id="mv-' + esc(x.id) + '" data-move-photo="' + esc(x.id) + '" aria-label="Mover a otra jornada">' + S.rounds.map((r) => '<option value="' + r.n + '"' + (x.round_n === r.n ? " selected" : "") + ">" + (x.round_n === r.n ? "En J" + r.n + " · " + esc((falla(r.host) || {}).short || "") : "Mover a J" + r.n + " · " + esc((falla(r.host) || {}).short || "")) + "</option>").join("") + "</select>" + (ui.confirmPhoto === x.id ? '<div style="display:flex;gap:6px"><button class="btn sm" data-photo-del="' + esc(x.id) + '">Sí, borrar</button><button class="btn ghost sm" data-photo-cancel>Cancelar</button></div>' : '<button class="btn ghost sm" data-photo-ask="' + esc(x.id) + '">Borrar</button>') + "</div>").join("") + "</div>";
+    } else if (ui.atab === "app") {
+      if (appStats === null) { loadAppStats(); h += '<p class="sub">Cargando instalaciones…</p>'; }
+      else if (appStatsError) h += '<p class="login-err">' + esc(appStatsError) + "</p>";
+      else {
+        const A = appStats, pp = (n) => n + (n === 1 ? " persona" : " personas");
+        const tile = (n, l, sub) => '<div class="vtile"><b class="num">' + n + "</b><span>" + l + "</span><small>" + sub + "</small></div>";
+        h += '<div class="vtiles app-tiles">' + tile(A.total || 0, "Instalaciones", "Android " + (A.android || 0) + " · iPhone/iPad " + (A.ios || 0)) + tile(A.new_today || 0, "Nuevas hoy", (A.new_week || 0) + " en los últimos 7 días") + tile(A.active_week || 0, "Activas esta semana", pp(A.active_week || 0) + " la han abierto en 7 días") + tile(A.opens || 0, "Aperturas", "veces que se ha abierto la app") + "</div>";
+        const d = A.daily || [], max = Math.max(1, ...d.map((x) => x.n));
+        h += '<h3 style="font-size:19px;margin-top:18px">Nuevas instalaciones por día · últimos 30 días</h3><div class="vchart" role="img" aria-label="Instalaciones nuevas por día">' + d.map((x, i) => '<div class="vbar" title="' + esc(fmtDate(x.day)) + ": " + x.n + (x.n === 1 ? " instalación" : " instalaciones") + '"><em class="num">' + (x.n || "") + '</em><i style="height:' + Math.round((x.n / max) * 100) + '%"></i><span>' + (i % 5 === 4 || i === d.length - 1 ? pd(x.day).getDate() + "/" + (pd(x.day).getMonth() + 1) : "") + "</span></div>").join("") + "</div>";
+        const places = A.places || [], list = A.list || [], pmax = Math.max(1, ...places.map((x) => x.n));
+        h += '<div class="grid-2" style="margin-top:22px;gap:18px"><div><h3 style="font-size:19px">¿Desde dónde se ha instalado?</h3>';
+        h += places.length ? '<div class="places">' + places.map((x) => '<div class="place" title="Android ' + x.android + " · iPhone/iPad " + x.ios + '"><span class="pname">' + esc(placeName(x)) + '<small class="sub"> · ' + [x.android ? x.android + " Android" : "", x.ios ? x.ios + " iPhone" : ""].filter(Boolean).join(", ") + '</small></span><span class="pbar"><i style="width:' + Math.max(4, Math.round((x.n / pmax) * 100)) + '%"></i></span><b class="num">' + x.n + "</b></div>").join("") + "</div>" : '<p class="sub">Todavía nadie ha instalado la app.</p>';
+        h += '</div><div><h3 style="font-size:19px">Últimas instalaciones</h3>';
+        h += list.length ? '<div class="recent">' + list.map((x) => '<div class="rrow"><span class="num rtime">' + esc(fmtVisit(x.first_at)) + '</span><span class="rplace">' + esc(placeName(x)) + '</span><small>' + esc(x.os) + " · abierta " + x.opens + (x.opens === 1 ? " vez" : " veces") + " · última: " + esc(fmtVisit(x.last_at)) + "</small></div>").join("") + "</div>" : '<p class="sub">Todavía no hay instalaciones.</p>';
+        h += "</div></div>";
+        h += '<p class="legend" style="margin-top:14px">Cada instalación se cuenta la primera vez que alguien abre la app desde su pantalla de inicio, y el lugar es el de esa primera apertura (aproximado, según la conexión). Si alguien borra la app y la vuelve a instalar, cuenta como otra.</p><button class="btn ghost" data-reload-app style="margin-top:8px">Actualizar</button>';
+      }
     } else if (ui.atab === "visitas") {
       if (stats === null) { loadStats(); h += '<p class="sub">Cargando visitas…</p>'; }
       else if (statsError) h += '<p class="login-err">' + esc(statsError) + "</p>";
@@ -694,6 +718,7 @@
     if (t.dataset.unlogo) { falla(t.dataset.unlogo).logo = null; markDirty(); return render(); }
     if (t.hasAttribute("data-discard")) { S = clone(saved); dirty = false; return render(); }
     if (t.hasAttribute("data-save")) return save(t);
+    if (t.hasAttribute("data-reload-app")) { appStats = null; return render(); }
     if (t.hasAttribute("data-reload-stats")) { stats = null; photoStats = null; return render(); }
     if (t.hasAttribute("data-reload-pstats")) { photoStats = null; return render(); }
     if (t.dataset.photoAsk) { ui.confirmPhoto = t.dataset.photoAsk; return render(); }
@@ -723,7 +748,7 @@
       return;
     }
     if (t.hasAttribute("data-logout")) {
-      session = null; users = null; stats = null; audit = null;
+      session = null; users = null; stats = null; audit = null; appStats = null;
       if (sb) sb.rpc("audit_event", { p_action: "logout" }).then(() => sb.auth.signOut(), () => sb.auth.signOut());
       S = clone(saved); dirty = false; return go("inicio");
     }
