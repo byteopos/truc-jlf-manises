@@ -410,6 +410,7 @@
       case "login_fallido": return ["Fallo", "Intento de entrada fallido con el usuario «" + e.username + "»" + (d.dispositivo ? " · " + d.dispositivo : "")];
       case "usuario_creado": return ["Usuarios", "Creó el usuario «" + (d.usuario || "") + "» (" + (d.rol === "root" ? "administrador principal" : "organización") + ")"];
       case "contrasena_cambiada": return ["Usuarios", "Cambió la contraseña de «" + (d.usuario || "") + "»"];
+      case "copia": return ["Copia", "Descargó una copia de seguridad completa"];
       case "usuario_eliminado": return ["Usuarios", "Eliminó el usuario «" + (d.usuario || "") + "»"];
     }
     const out = [];
@@ -503,7 +504,63 @@
     if (error) { statsError = "No se pudieron cargar las visitas. Vuelve a entrar y prueba de nuevo."; stats = {}; } else stats = data || {};
     render();
   }
-  let appStats = null, appStatsError = null;
+  let appStats = null, appStatsError = null, backupLast;
+  async function loadBackupLast() {
+    backupLast = null;
+    const { data } = await sb.rpc("backup_last");
+    backupLast = data || null;
+    render();
+  }
+  function loadScript(src) {
+    return new Promise((ok, ko) => { const el = document.createElement("script"); el.src = src; el.onload = ok; el.onerror = () => ko(new Error("No se pudo cargar " + src)); document.head.appendChild(el); });
+  }
+  async function makeBackup() {
+    const step = (m) => { ui.backupBusy = m; render(); };
+    try {
+      step("Preparando…");
+      if (!window.JSZip) await loadScript("/vendor/jszip.min.js");
+      step("Leyendo los datos…");
+      const { data, error } = await sb.rpc("backup_export");
+      if (error || !data) throw new Error("No se pudieron leer los datos.");
+      const zip = new JSZip(), stamp = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Madrid" }).slice(0, 16).replace(" ", "_").replace(":", "-");
+      const T = data.tablas || {};
+      Object.keys(T).forEach((k) => zip.file("datos/" + k + ".json", JSON.stringify(T[k], null, 2)));
+      zip.file("datos/todo.json", JSON.stringify(data, null, 2));
+      (data.migraciones || []).forEach((m) => zip.file("base-de-datos/" + m.version + "_" + m.nombre + ".sql", "-- " + m.nombre + "\n" + m.sql + ";\n"));
+      zip.file("base-de-datos/tareas-programadas.json", JSON.stringify(data.tareas || [], null, 2));
+      const ph = T.photos || [];
+      let n = 0, fail = 0;
+      for (const p of ph) {
+        n++; step("Descargando fotos… " + n + " de " + ph.length);
+        for (const path of [p.path, p.thumb]) {
+          try { const r = await fetch(photoUrl(path)); if (!r.ok) throw 0; zip.file("fotos/" + path, await r.blob()); } catch (x) { fail++; }
+        }
+      }
+      zip.file("LEEME.txt", [
+        "Copia de seguridad del Campionat de Truc · JLF Manises",
+        "Generada: " + new Date().toLocaleString("es-ES", { timeZone: "Europe/Madrid" }),
+        "",
+        "datos/          Todas las tablas en JSON (todo.json lo reúne en un solo archivo).",
+        "base-de-datos/  Las órdenes SQL que crean la base de datos, en orden. El secreto de los avisos va como <PUSH_SECRET>.",
+        "fotos/          Las fotos de la galería y sus miniaturas, por jornada.",
+        "",
+        "El código de la web, la app y los avisos está en GitHub: byteopos/truc-jlf-manises.",
+        "Las contraseñas y las claves privadas no se incluyen. Para restaurar, sigue el documento «Memoria del proyecto».",
+        "",
+        "Resumen: " + (T.matches || []).filter((m) => m.sa != null).length + " partidas con resultado, " + ph.length + " fotos" + (fail ? " (" + fail + " archivos de foto no se pudieron descargar)" : "") + ", " + (T.visits || []).length + " visitas.",
+      ].join("\r\n"));
+      step("Comprimiendo…");
+      const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "copia-truc-jlf-" + stamp + ".zip";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      toast("Copia descargada" + (fail ? ", pero " + fail + " archivos de foto fallaron." : "."));
+      backupLast = undefined;
+    } catch (e) {
+      toast(e.message || "No se pudo hacer la copia.");
+    } finally { ui.backupBusy = null; render(); }
+  }
   async function loadAppStats() {
     appStatsError = null;
     const { data, error } = await sb.rpc("app_install_stats");
@@ -521,7 +578,7 @@
   function viewAdmin(C) {
     let h = '<section class="card admin"><h2>' + SUITS.bastos.replace("<svg", '<svg width="28"') + ' Modo organización <button class="btn ghost sm" data-logout style="margin-left:auto">Cerrar sesión</button></h2><div class="who-line">Sesión: <b>' + esc(session.u) + '</b> <span class="chip ' + (isRoot() ? "red" : "ghost") + '">' + ROLE_NAME[session.role] + '</span></div><div class="sub">Zona privada de la organización. Los cambios se ven en la web al pulsar «Publicar cambios».</div><div class="atabs" role="group">';
     const ATABS = [["resultados", "Resultados"], ["cruces", "Cruces"], ["parejas", "Jugadores"], ["logos", "Escudos"], ["semana", "Semana y aviso"], ["fotos", "Fotos"], ["visitas", "Visitas"], ["app", "App"]];
-    if (isRoot()) ATABS.push(["fechas", "Fechas y casales"], ["usuarios", "Usuarios"], ["auditoria", "Auditoría"]);
+    if (isRoot()) ATABS.push(["fechas", "Fechas y casales"], ["usuarios", "Usuarios"], ["auditoria", "Auditoría"], ["copia", "Copia de seguridad"]);
     if (!ATABS.some(([k]) => k === ui.atab)) ui.atab = "resultados";
     ATABS.forEach(([k, l]) => (h += '<button data-atab="' + k + '" aria-pressed="' + (ui.atab === k) + '">' + l + "</button>"));
     h += "</div>";
@@ -582,6 +639,13 @@
       h += (photos.length ? '<div style="margin-top:10px"><button class="btn ghost sm" data-reload-pstats>Actualizar vistas</button></div>' : "") + '<p class="legend" style="margin-top:8px">Las vistas cuentan cada vez que alguien abre una foto en grande (una por persona y sesión; las de la organización no cuentan). Puedes elegir varias fotos a la vez. Se suben al momento, ya reducidas, y aparecen enseguida en la Galería (no hace falta «Publicar cambios»). Sube solo fotos en las que la gente esté de acuerdo en salir.</p>';
       if (!list.length) h += '<p class="sub">Esta jornada todavía no tiene fotos.</p>';
       else h += '<div class="gal-admin">' + list.map((x) => '<div class="gal-aitem"><img src="' + esc(photoUrl(x.thumb)) + '" alt=""><span class="pv num">' + esc(pvText(x.id)) + '</span><input type="text" maxlength="200" id="cap-' + esc(x.id) + '" data-cap="' + esc(x.id) + '" placeholder="Pie de foto (opcional)" value="' + esc(x.caption) + '">' + '<select class="move-photo" id="mv-' + esc(x.id) + '" data-move-photo="' + esc(x.id) + '" aria-label="Mover a otra jornada">' + S.rounds.map((r) => '<option value="' + r.n + '"' + (x.round_n === r.n ? " selected" : "") + ">" + (x.round_n === r.n ? "En J" + r.n + " · " + esc((falla(r.host) || {}).short || "") : "Mover a J" + r.n + " · " + esc((falla(r.host) || {}).short || "")) + "</option>").join("") + "</select>" + (ui.confirmPhoto === x.id ? '<div style="display:flex;gap:6px"><button class="btn sm" data-photo-del="' + esc(x.id) + '">Sí, borrar</button><button class="btn ghost sm" data-photo-cancel>Cancelar</button></div>' : '<button class="btn ghost sm" data-photo-ask="' + esc(x.id) + '">Borrar</button>') + "</div>").join("") + "</div>";
+    } else if (ui.atab === "copia" && isRoot()) {
+      if (backupLast === undefined) loadBackupLast();
+      const days = backupLast ? Math.floor((Date.now() - new Date(backupLast).getTime()) / 864e5) : null;
+      h += '<div class="backup-box"><h3 style="font-size:19px;margin:0 0 6px">Copia de seguridad completa</h3><p style="margin:0 0 10px">Descarga un archivo ZIP con <b>todos los datos</b> (resultados, cruces, parejas, fallas, calendario, fotos, visitas, auditoría y avisos), <b>las fotos de la galería</b> y <b>la estructura de la base de datos</b>. Guárdalo en tu ordenador y en una nube (Google Drive, OneDrive…).</p>';
+      h += '<p class="legend" style="margin:0 0 12px">' + (backupLast ? "Última copia: " + esc(fmtVisit(backupLast)) + (days >= 7 ? ' · <b style="color:var(--loss)">hace ' + days + " días, conviene hacer otra</b>" : "") : "Todavía no se ha descargado ninguna copia.") + "</p>";
+      h += '<button class="btn gold" data-backup' + (ui.backupBusy ? " disabled" : "") + ">" + (ui.backupBusy ? esc(ui.backupBusy) : "Descargar copia de seguridad") + "</button></div>";
+      h += '<p class="legend" style="margin-top:14px">El código de la web, la app y los avisos está en GitHub (<b>byteopos/truc-jlf-manises</b>): ahí se puede descargar con «Code → Download ZIP». Las contraseñas y las claves privadas no se incluyen en la copia por seguridad. Recomendado: una copia después de cada jornada.</p>';
     } else if (ui.atab === "app") {
       if (appStats === null) { loadAppStats(); h += '<p class="sub">Cargando instalaciones…</p>'; }
       else if (appStatsError) h += '<p class="login-err">' + esc(appStatsError) + "</p>";
@@ -819,6 +883,7 @@
     if (t.dataset.unlogo) { falla(t.dataset.unlogo).logo = null; markDirty(); return render(); }
     if (t.hasAttribute("data-discard")) { S = clone(saved); dirty = false; return render(); }
     if (t.hasAttribute("data-save")) return save(t);
+    if (t.hasAttribute("data-backup") && isRoot()) return makeBackup();
     if (t.hasAttribute("data-reload-app")) { appStats = null; pushInfo = null; return render(); }
     if (t.hasAttribute("data-reload-stats")) { stats = null; photoStats = null; return render(); }
     if (t.hasAttribute("data-reload-pstats")) { photoStats = null; return render(); }

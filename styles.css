@@ -371,3 +371,4 @@ footer { padding-block: 10px 40px; color: var(--on-felt-soft); font-size: 12.5px
 .linkbtn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-decoration: underline; cursor: pointer; }
 .push-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 .push-confirm { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; font-size: 13.5px; }
+.backup-box { padding: 16px; border-radius: 14px; background: #fff4d6; border: 1.5px solid var(--oros); }
