@@ -1,0 +1,8 @@
+{
+  "name": "truc-jlf-manises",
+  "private": true,
+  "description": "Campionat de Truc · JLF Manises. Web estática con funciones en /api.",
+  "dependencies": {
+    "web-push": "3.6.7"
+  }
+}

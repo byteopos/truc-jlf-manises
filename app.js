@@ -597,6 +597,18 @@
         h += '</div><div><h3 style="font-size:19px">Últimas instalaciones</h3>';
         h += list.length ? '<div class="recent">' + list.map((x) => '<div class="rrow"><span class="num rtime">' + esc(fmtVisit(x.first_at)) + '</span><span class="rplace">' + esc(placeName(x)) + '</span><small>' + esc(x.os) + " · abierta " + x.opens + (x.opens === 1 ? " vez" : " veces") + " · última: " + esc(fmtVisit(x.last_at)) + "</small></div>").join("") + "</div>" : '<p class="sub">Todavía no hay instalaciones.</p>';
         h += "</div></div>";
+        if (pushInfo === null) loadPushInfo();
+        const PI = pushInfo || {}, played = S.rounds.filter((r) => r.date <= todayISO()), lastR = played[played.length - 1], nextR = S.rounds.find((r) => r.date > todayISO());
+        h += '<h3 style="font-size:19px;margin-top:24px">🔔 Avisos (notificaciones)</h3>';
+        if (PI.error) h += '<p class="login-err">No se pudo cargar la información de avisos.</p>';
+        else {
+          h += '<div class="vtiles app-tiles">' + tile(PI.subs || 0, "Con avisos activados", "Android " + (PI.android || 0) + " · iPhone/iPad " + (PI.ios || 0)) + "</div>";
+          h += '<p class="legend" style="margin-top:8px">Se envían solos: el <b>día antes</b> de cada jornada a las 20:30, la <b>misma mañana</b> a las 10:30 y, cuando se publican <b>todos los resultados</b> de una jornada, el aviso de resultados (una sola vez).' + (nextR ? " Próximo: «Recuerda que mañana se juega la jornada " + nextR.n + " en la " + esc((falla(nextR.host) || {}).name || "") + "», el " + esc(((d) => { d.setDate(d.getDate() - 1); return fmtDate(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"), true); })(pd(nextR.date))) + " a las 20:30." : "") + "</p>";
+          const sendBtn = (kind, r, label) => r ? (pushAsk === kind + ":" + r.n ? '<span class="push-confirm">¿Enviar a todos? <button class="btn gold" data-push-send="' + kind + ":" + r.n + '">Sí, enviar</button><button class="btn ghost" data-push-cancel>No</button></span>' : '<button class="btn ghost" data-push-ask="' + kind + ":" + r.n + '">' + label + "</button>") : "";
+          h += '<div class="push-actions">' + (pushState === "on" ? '<button class="btn ghost" data-push-test>Probar en este dispositivo</button>' : '<span class="sub">Para probar, activa los avisos en este dispositivo (abajo del todo, «Activar avisos»).</span>') + sendBtn("results", lastR, "Reenviar resultados J" + (lastR ? lastR.n : "")) + "</div>";
+          const log = PI.log || [];
+          h += log.length ? '<div class="recent" style="margin-top:10px">' + log.map((x) => '<div class="rrow"><span class="num rtime">' + esc(fmtVisit(x.at)) + '</span><span class="rplace">' + esc(PUSH_KIND[x.kind] || x.kind) + " · jornada " + x.round + "</span><small>" + (x.sent == null ? "Enviando…" : x.sent + " entregados" + (x.failed ? " · " + x.failed + " fallidos" : "")) + " · " + esc(x.by || "") + "</small></div>").join("") + "</div>" : '<p class="sub" style="margin-top:8px">Todavía no se ha enviado ningún aviso.</p>';
+        }
         h += '<p class="legend" style="margin-top:14px">Cada instalación se cuenta la primera vez que alguien abre la app desde su pantalla de inicio, y el lugar es el de esa primera apertura (aproximado, según la conexión). Si alguien borra la app y la vuelve a instalar, cuenta como otra.</p><button class="btn ghost" data-reload-app style="margin-top:8px">Actualizar</button>';
       }
     } else if (ui.atab === "visitas") {
@@ -654,7 +666,7 @@
   const installHidden = () => { try { return localStorage.getItem("truc-install-hide") === "1"; } catch (e) { return false; } };
   function installCard() {
     if (!canInstall() || installHidden()) return "";
-    return '<div class="install-card" role="note"><img src="/icon-192.png" alt="" width="48" height="48"><div><b>Llévate el campeonato en el móvil</b><br><small>Instala la app y entra con un toque desde tu pantalla de inicio. La web sigue igual.</small></div><div class="install-actions"><button class="btn gold" data-install>Instalar app</button><button class="install-x" data-install-hide aria-label="Ocultar">×</button></div></div>';
+    return '<div class="install-card" role="note"><img src="/icon-192.png" alt="" width="48" height="48"><div><b>Llévate el campeonato en el móvil</b><br><small>Instala la app, entra con un toque desde tu pantalla de inicio y recibe avisos de cada jornada. La web sigue igual.</small></div><div class="install-actions"><button class="btn gold" data-install>Instalar app</button><button class="install-x" data-install-hide aria-label="Ocultar">×</button></div></div>';
   }
   function iosHelp() {
     if (!ui.iosHelp) return "";
@@ -664,6 +676,79 @@
     if (installEvt) { installEvt.prompt(); try { await installEvt.userChoice; } catch (e) {} installEvt = null; return render(); }
     if (isIOS) { ui.iosHelp = true; render(); }
   }
+
+  // ---------- avisos (notificaciones push) ----------
+  const VAPID = (window.TRUC_CONFIG || {}).VAPID_PUBLIC_KEY;
+  let pushState = "unknown", pushEndpoint = null, pushBusy = false, pushInfo = null, pushAsk = null;
+  const pushHidden = () => { try { return localStorage.getItem("truc-push-hide") === "1"; } catch (e) { return false; } };
+  const b64ToBytes = (b64) => { const p = "=".repeat((4 - (b64.length % 4)) % 4), raw = atob((b64 + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); };
+  const swReady = () => Promise.race([navigator.serviceWorker.ready, new Promise((_, rej) => setTimeout(() => rej(new Error("sw")), 6000))]);
+  async function saveSub(sub) {
+    const j = sub.toJSON();
+    const { error } = await sb.rpc("push_subscribe", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth, p_device: deviceInfo() });
+    if (error) throw error;
+  }
+  async function refreshPush() {
+    if (isIOS && !isStandalone()) pushState = "needs-install";
+    else if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window) || !VAPID) pushState = "unsupported";
+    else if (Notification.permission === "denied") pushState = "denied";
+    else {
+      try {
+        const sub = await (await swReady()).pushManager.getSubscription();
+        pushEndpoint = sub ? sub.endpoint : null; pushState = sub ? "on" : "off";
+        if (sub && sb) saveSub(sub).catch(() => {});
+      } catch (e) { pushState = "unsupported"; }
+    }
+    if (S) render();
+  }
+  async function enablePush() {
+    if (pushBusy) return;
+    pushBusy = true; render();
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { pushState = perm === "denied" ? "denied" : "off"; toast(perm === "denied" ? "Has bloqueado los avisos. Puedes activarlos en los ajustes del navegador." : "No se han activado los avisos."); return; }
+      const reg = await swReady();
+      const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID) }));
+      await saveSub(sub);
+      pushEndpoint = sub.endpoint; pushState = "on";
+      toast("🔔 Avisos activados. Te avisaremos de cada jornada.");
+    } catch (e) {
+      toast("No se pudieron activar los avisos. Inténtalo de nuevo.");
+    } finally { pushBusy = false; render(); }
+  }
+  async function disablePush() {
+    if (pushBusy) return;
+    pushBusy = true; render();
+    try {
+      const sub = await (await swReady()).pushManager.getSubscription();
+      if (sub) { await sb.rpc("push_unsubscribe", { p_endpoint: sub.endpoint }); await sub.unsubscribe(); }
+      pushEndpoint = null; pushState = "off"; toast("Avisos desactivados.");
+    } catch (e) { toast("No se pudieron desactivar los avisos."); }
+    finally { pushBusy = false; render(); }
+  }
+  function pushCard() {
+    if (pushState !== "off" || pushHidden()) return "";
+    return '<div class="install-card push-card" role="note"><span class="bell" aria-hidden="true">🔔</span><div><b>Avisos del campeonato</b><br><small>Te avisamos el día antes y la misma mañana de cada jornada, con la falla donde se juega, y cuando salgan los resultados.</small></div><div class="install-actions"><button class="btn gold" data-push-on' + (pushBusy ? " disabled" : "") + ">" + (pushBusy ? "Activando…" : "Activar avisos") + '</button><button class="install-x" data-push-hide aria-label="Ocultar">×</button></div></div>';
+  }
+  function pushFoot() {
+    if (pushState === "on") return '<span class="push-foot">🔔 Avisos activados · <button class="linkbtn" data-push-off>Desactivar</button></span>';
+    if (pushState === "off") return '<button class="btn ghost foot-install" data-push-on>🔔 Activar avisos</button>';
+    if (pushState === "denied") return '<span class="push-foot">🔕 Los avisos están bloqueados en este navegador. Puedes permitirlos en sus ajustes.</span>';
+    return "";
+  }
+  async function loadPushInfo() {
+    const { data, error } = await sb.rpc("push_admin_info");
+    pushInfo = error ? { error: true } : data || {};
+    render();
+  }
+  async function pushApi(body) {
+    const { data } = await sb.auth.getSession();
+    const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + (data && data.session ? data.session.access_token : "") }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "Error " + r.status);
+    return j;
+  }
+  const PUSH_KIND = { eve: "Día antes", today: "Mañana de la jornada", results: "Resultados", test: "Prueba" };
 
   // ---------- shell ----------
   const VIEWS = [["inicio", "Inicio"], ["clasificacion", "Clasificación"], ["calendario", "Calendario"], ["parejas", "Parejas"], ["fallas", "Fallas"], ["galeria", "Galería"]];
@@ -681,8 +766,8 @@
     let h = (luto ? '<div class="luto-band" role="note"><div class="wrap">' + ribbon + "<span>" + esc(luto.text || "") + "</span></div></div>" : "") + '<header class="hero"><div class="wrap"><div class="hero-inner"><div class="jlf-wrap"><div class="jlf">' + jlf + "</div>" + (luto ? ribbon.replace('class="crespon"', 'class="crespon on-crest"') : "") + '</div><div class="hero-text"><div class="eyebrow">Junta Local Fallera de Manises · Temporada ' + esc(S.season) + '</div><h1>Campionat de <em>Truc</em></h1><p>' + allPairs().length + " parejas, " + teams().length + " fallas y " + S.rounds.length + ' jornadas de casal en casal. Aquí se canta el truc, se apunta cada partida y se sabe quién manda en Manises.</p></div><div class="fan" aria-hidden="true">' + SUIT_ORDER.map((s, i) => '<div class="pc"><b>' + ["1", "3", "7", "12"][i] + "</b>" + SUITS[s] + "</div>").join("") + '</div></div><div class="progress"><span class="num">Jornada ' + C.playedRounds + " de " + S.rounds.length + '</span><div class="bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + Math.max(pct, 2) + '%"></i></div><span>' + (C.next ? "Próxima: " + esc(fmtDate(C.next.date)) : "¡Campeonato terminado!") + "</span></div></div></header>";
     h += '<nav class="tabs" aria-label="Secciones"><div class="wrap">' + VIEWS.map(([k, l]) => '<button class="tab" data-go="' + k + '"' + (ui.view === k ? ' aria-current="page"' : "") + ">" + l + "</button>").join("") + ('<button class="tab admin-tab" data-go="admin"' + (ui.view === "admin" ? ' aria-current="page"' : "") + ">Organización" + (dirty ? " •" : "") + "</button>") + "</div></nav>";
     const fn = { inicio: viewInicio, clasificacion: viewClasificacion, calendario: viewCalendario, parejas: viewParejas, fallas: viewFallas, galeria: viewGaleria, admin: session ? viewAdmin : viewLogin }[ui.view] || viewInicio;
-    h += '<main class="wrap">' + (ui.view === "inicio" ? installCard() : "") + fn(C) + "</main>";
-    h += '<footer class="wrap">Campionat de Truc · Junta Local Fallera de Manises · Actualizado el ' + esc(fmtDate(S.updated)) + '<span class="sign">Realizada por <strong>KazaIA</strong></span>' + (canInstall() ? '<button class="btn ghost foot-install" data-install>📲 Instalar app</button>' : "") + "</footer>" + iosHelp();
+    h += '<main class="wrap">' + (ui.view === "inicio" ? installCard() + pushCard() : "") + fn(C) + "</main>";
+    h += '<footer class="wrap">Campionat de Truc · Junta Local Fallera de Manises · Actualizado el ' + esc(fmtDate(S.updated)) + '<span class="sign">Realizada por <strong>KazaIA</strong></span>' + (canInstall() ? '<button class="btn ghost foot-install" data-install>📲 Instalar app</button>' : "") + pushFoot() + "</footer>" + iosHelp();
     const y = window.scrollY;
     app.innerHTML = h;
     window.scrollTo(0, y);
@@ -707,6 +792,22 @@
     if (!t) return;
     if (t.dataset.go) return go(t.dataset.go);
     if (t.hasAttribute("data-install")) return doInstall();
+    if (t.hasAttribute("data-push-on")) return enablePush();
+    if (t.hasAttribute("data-push-off")) return disablePush();
+    if (t.hasAttribute("data-push-hide")) { try { localStorage.setItem("truc-push-hide", "1"); } catch (x) {} return render(); }
+    if (t.hasAttribute("data-push-test")) {
+      t.disabled = true;
+      pushApi({ kind: "test", endpoint: pushEndpoint }).then(() => toast("Aviso de prueba enviado. Debería llegarte en unos segundos."), (x) => toast(x.message)).finally(() => { pushInfo = null; render(); });
+      return;
+    }
+    if (t.dataset.pushAsk) { pushAsk = t.dataset.pushAsk; return render(); }
+    if (t.hasAttribute("data-push-cancel")) { pushAsk = null; return render(); }
+    if (t.dataset.pushSend) {
+      const [kind, round] = t.dataset.pushSend.split(":");
+      t.disabled = true; t.textContent = "Enviando…";
+      pushApi({ kind, round: +round }).then((j) => toast("Aviso enviado a " + j.sent + (j.sent === 1 ? " dispositivo." : " dispositivos.")), (x) => toast(x.message)).finally(() => { pushAsk = null; pushInfo = null; render(); });
+      return;
+    }
     if (t.hasAttribute("data-install-hide")) { try { localStorage.setItem("truc-install-hide", "1"); } catch (x) {} return render(); }
     if (t.hasAttribute("data-install-close")) { ui.iosHelp = false; return render(); }
     if (t.dataset.table) { ui.table = t.dataset.table; return render(); }
@@ -718,7 +819,7 @@
     if (t.dataset.unlogo) { falla(t.dataset.unlogo).logo = null; markDirty(); return render(); }
     if (t.hasAttribute("data-discard")) { S = clone(saved); dirty = false; return render(); }
     if (t.hasAttribute("data-save")) return save(t);
-    if (t.hasAttribute("data-reload-app")) { appStats = null; return render(); }
+    if (t.hasAttribute("data-reload-app")) { appStats = null; pushInfo = null; return render(); }
     if (t.hasAttribute("data-reload-stats")) { stats = null; photoStats = null; return render(); }
     if (t.hasAttribute("data-reload-pstats")) { photoStats = null; return render(); }
     if (t.dataset.photoAsk) { ui.confirmPhoto = t.dataset.photoAsk; return render(); }
@@ -965,12 +1066,14 @@
   }
 
   // ---------- boot ----------
+  window.addEventListener("hashchange", () => { const hv = (location.hash || "").replace("#", ""); if (VIEWS.some(([k]) => k === hv) && hv !== ui.view && S) go(hv); });
   const h0 = (location.hash || "").replace("#", "");
   if (VIEWS.some(([k]) => k === h0)) ui.view = h0;
   render();
   (async () => {
     if (!sb) { loadError = !window.supabase ? "No se ha podido cargar la conexión con la base de datos. Recarga la página; si sigue igual, prueba desde otra red o desde el móvil." : "Falta configurar la conexión con Supabase (archivo config.js)."; return render(); }
     try { await loadAll(); } catch (e) { loadError = "No se pudo cargar el campeonato. Revisa tu conexión y recarga la página."; return render(); }
+    refreshPush();
     try {
       if (!sessionStorage.getItem("truc-visit")) {
         let id = localStorage.getItem("truc-vid");
