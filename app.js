@@ -255,12 +255,21 @@
       if (vid) sb.rpc("track_photo_view", { p_photo: x.id, p_visitor: vid }).then(() => {}, () => {});
     } catch (e) {}
   }
-  let photoStats = null;
+  // Vistas de las fotos: se vuelven a pedir al entrar en Fotos o Visitas y, con la pestaña abierta,
+  // cada minuto, para que las fotos recién subidas muestren sus vistas sin recargar la página.
+  let photoStats = null, photoStatsAt = 0, photoStatsBusy = false;
   async function loadPhotoStats() {
-    const { data, error } = await sb.rpc("photo_stats");
-    photoStats = error ? {} : data || {};
+    if (photoStatsBusy) return;
+    photoStatsBusy = true;
+    try {
+      const { data, error } = await sb.rpc("photo_stats");
+      if (!error) { photoStats = data || {}; photoStatsAt = Date.now(); }
+      else if (photoStats === null) photoStats = {};
+    } finally { photoStatsBusy = false; }
     render();
   }
+  const freshPhotoStats = () => { if (photoStats === null || Date.now() - photoStatsAt > 60000) loadPhotoStats(); };
+  setInterval(() => { if (session && (ui.atab === "fotos" || ui.atab === "visitas") && ui.view === "admin" && document.visibilityState === "visible") loadPhotoStats(); }, 60000);
   const pvText = (id) => { const v = photoStats && photoStats[id]; if (!v) return "0 vistas"; return v.views + (v.views === 1 ? " vista" : " vistas") + " · " + v.unique + (v.unique === 1 ? " persona" : " personas"); };
   function drawLightbox() {
     let lb = document.getElementById("lightbox");
@@ -632,7 +641,7 @@
       if (ui.photoRound == null) { const past = S.rounds.filter((r) => r.date <= todayISO()); ui.photoRound = (past[past.length - 1] || S.rounds[0]).n; }
       const PR = S.rounds.find((r) => r.n === ui.photoRound) || S.rounds[0], PF = falla(PR.host);
       const list = photos.filter((x) => x.round_n === PR.n);
-      if (photoStats === null) loadPhotoStats();
+      freshPhotoStats();
       const optsR = (sel) => S.rounds.map((r) => '<option value="' + r.n + '"' + (sel === r.n ? " selected" : "") + ">J" + r.n + " · " + esc(fmtDate(r.date)) + " · " + esc((falla(r.host) || {}).short || "") + "</option>").join("");
       h += '<div class="photo-target">' + (PF ? crest(PF, "lg") : "") + '<div><small class="sub">Las fotos se guardan en</small><br><b>Jornada ' + PR.n + " · " + esc(fmtDate(PR.date, true)) + " · " + esc(PF ? PF.name : "") + "</b></div></div>";
       h += '<div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap"><div style="flex:1 1 260px;max-width:360px"><label class="field">Jornada de las fotos<select id="a-photo-round">' + optsR(PR.n) + "</select></label></div>" + '<label class="btn gold' + (ui.upBusy ? " busy" : "") + '">' + (ui.upBusy ? esc(ui.upBusy) : "Subir fotos de esta jornada") + '<input type="file" accept="image/*" multiple data-gal-upload hidden' + (ui.upBusy ? " disabled" : "") + "></label></div>";
@@ -695,7 +704,7 @@
         h += recent.length ? '<div class="recent">' + recent.map((x) => '<div class="rrow"><span class="num rtime">' + esc(fmtVisit(x.at)) + '</span><span class="rplace">' + esc(placeName(x)) + '</span><small>' + esc(x.device || "") + "</small></div>").join("") + "</div>" : '<p class="sub">Todavía no hay visitas.</p>';
         h += "</div></div>";
         if (photos.length) {
-          if (photoStats === null) loadPhotoStats();
+          freshPhotoStats();
           const top = photos.map((x) => ({ x, v: (photoStats && photoStats[x.id]) || { views: 0, unique: 0 } })).filter((y) => y.v.views > 0).sort((a, b) => b.v.views - a.v.views).slice(0, 8);
           h += '<h3 style="font-size:19px;margin-top:22px">Fotos más vistas</h3>' + (top.length ? '<div class="gal-admin">' + top.map((y) => '<div class="gal-aitem"><img src="' + esc(photoUrl(y.x.thumb)) + '" alt=""><b class="pv num">' + esc(pvText(y.x.id)) + '</b><small class="sub">Jornada ' + y.x.round_n + (y.x.caption ? " · " + esc(y.x.caption) : "") + "</small></div>").join("") + "</div>" : '<p class="sub">Todavía nadie ha abierto ninguna foto.</p>');
         }
@@ -875,7 +884,7 @@
     if (t.hasAttribute("data-install-hide")) { try { localStorage.setItem("truc-install-hide", "1"); } catch (x) {} return render(); }
     if (t.hasAttribute("data-install-close")) { ui.iosHelp = false; return render(); }
     if (t.dataset.table) { ui.table = t.dataset.table; return render(); }
-    if (t.dataset.atab) { ui.atab = t.dataset.atab; return render(); }
+    if (t.dataset.atab) { ui.atab = t.dataset.atab; if (ui.atab === "fotos" || ui.atab === "visitas") photoStatsAt = 0; return render(); }
     const R = S.rounds.find((r) => r.n === ui.adminRound);
     if (t.hasAttribute("data-addmatch")) { const p = allPairs(); R.matches.push({ a: p[0], b: p[1], sa: null, sb: null }); markDirty(); return render(); }
     if (t.dataset.delmatch != null) { R.matches.splice(+t.dataset.delmatch, 1); markDirty(); return render(); }
@@ -954,7 +963,7 @@
       return;
     }
     if (t.hasAttribute("data-photo") && t.files && t.files[0]) { readSheetPhoto(t.files[0]); return; }
-    if (t.id === "a-photo-round") { ui.photoRound = +t.value; return render(); }
+    if (t.id === "a-photo-round") { ui.photoRound = +t.value; photoStatsAt = 0; return render(); }
     if (t.dataset.movePhoto) {
       const nr = +t.value, { error } = await sb.from("photos").update({ round_n: nr }).eq("id", t.dataset.movePhoto);
       if (error) { toast("No se pudo mover la foto."); return render(); }
